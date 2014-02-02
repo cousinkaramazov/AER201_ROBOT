@@ -57,13 +57,14 @@
 temp_var1       EQU     0x20        ; general variable to be used temporarily
 delay1          EQU     0x21        ; variable used in delay counter
 delay2          EQU     0x22        ; variable used in delay counter
-delay3          EQU     0x26
+
 
 keypad_data     EQU     0x23        ; holds input from keypad (PORTB)
 keypad_result   EQU     0x24        ; is entered value is equal to keypad_test?
 keypad_test     EQU     0x25        ; holds key value that is to be tested
 
-
+delay3          EQU     0x26        ; variable used in delay counter
+table_length    EQU     0x27        ; length of table currently displayed
 
 ; ============================================================================
 ; Macros
@@ -83,10 +84,6 @@ beq         macro   literal, register, label
             subwf   register
             bz     label
             endm
-; ----------------------------------------------------------------------------
-; LCD macros
-; ----------------------------------------------------------------------------
-
 ; ----------------------------------------------------------------------------
 ; Keypad macros
 ; ----------------------------------------------------------------------------
@@ -109,6 +106,7 @@ lcddisplay  macro   Table, Line
             ; If Line = 10000000, use Line 1; if Line = 11000000, use Line 2
             movlw   Line
             writelcdinst
+            getlen  Table
             ; move full address of table into Table Pointer
             movlw   upper Table
             movwf   TBLPTRU
@@ -118,6 +116,11 @@ lcddisplay  macro   Table, Line
             movwf   TBLPTRL
             ; write character data to LCD
             call    WriteLCDChar
+            ; if length is > 16, shift to left length - 16 times
+            ; pause between shifts
+            ; once its reached the end, send it back to the beginning
+            ;pause
+            ; begin scrolling again
             endm
 ; ----------------------------------------------------------------------------
 ; writelcdinst: Writes an instruction in W to the LCD display
@@ -130,6 +133,25 @@ writelcdinst    macro
 writelcddata    macro
             bsf     LCD_RS
             call    WriteLCD
+            endm
+; ----------------------------------------------------------------------------
+; getlen: Stores length of given table in table_length variable
+getlen          macro   Table
+            ; move full address of table into Table Pointer
+            movlw   upper Table
+            movwf   TBLPTRU
+            movlw   high Table
+            movwf   TBLPTRH
+            movlw   low Table
+            movwf   TBLPTRL
+            tblrd*                      ; copy byte pointed to by TBLPTR into TABLAT
+            movf    TABLAT, W           ; move contents of TABLAT into W
+            movlf   d'0', table_length  ; initialize table_length to zero
+getlengthloop
+            incf    table_length        ; increment table length by one
+            tblrd+*                     ; read next byte into TABLAT
+            movf    TABLAT, W           ; move contents of TABLAT into W
+            bnz     getlengthloop       ; all bytes have been read once 0 is reached
             endm
 ; ----------------------------------------------------------------------------
 lcdshift        macro   Line
