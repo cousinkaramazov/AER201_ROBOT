@@ -81,6 +81,15 @@ beq         macro   literal, register, label
             subwf   register
             bz     label
             endm
+; ----------------------------------------------------------------------------
+; Keypad macros
+; ----------------------------------------------------------------------------
+; testkey:  Checks if key has been pressed, branches to label if so
+testkey     macro   literal, label
+            movlf   literal, keypad_test
+            call    CheckButton
+            beq     d'1', keypad_test, label
+            endm
 
 ; ----------------------------------------------------------------------------
 
@@ -171,12 +180,8 @@ Menu
         lcddisplay  MenuMsg2, second_line
 
 MenuLoop
-        movlf       key_1, keypad_test
-        call        CheckButton
-        beq         d'1', keypad_result, BeginOperation
-        movlf       key_2, keypad_test
-        call        CheckButton
-        beq         d'1', keypad_result, Logs
+        testkey     key_1, BeginOperation
+        testkey     key_2, Logs
         bra         MenuLoop
 
 BeginOperation
