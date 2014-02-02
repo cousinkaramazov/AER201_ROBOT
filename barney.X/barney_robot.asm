@@ -49,13 +49,14 @@
 ; ============================================================================
 ; General Purpose Registers (using Access Bank)
 ; ============================================================================
-temp_var1       EQU     0x20
-delay1          EQU     0x21
-delay2          EQU     0x22
-
-keypad_data     EQU     0x23
-keypad_result   EQU     0x24
-keypad_test     EQU     0x25
+    cblock          0x20
+        temp_var1
+        delay1
+        delay2
+        keypad_data
+        keypad_result
+        keypad_test
+    endc
 
 
 
@@ -147,10 +148,12 @@ writelcddata    macro
 
 WelcomeMsg              db      "Welcome User!", 0
 WelcomeMsg2             db      "Press any button to continue.", 0
-MenuMsg1                db      "Main Menu"
-MenuMsg2                db      "1:Begin, 2:Logs"
-OpMsg                   db      "Operation Begins"
-LogMsg                  db      "Logs here"
+MenuMsg1                db      "Main Menu", 0
+MenuMsg2                db      "1:Begin, 2:Logs", 0
+OpMsg                   db      "Working...", 0
+OpComplete              db      "Operation complete", 0
+LogMsg1                 db      "Logs here", 0
+LogMsg2                 db      "1: Main Menu", 0
 
 
 ; ============================================================================
@@ -200,12 +203,24 @@ MenuLoop
 BeginOperation
         call        ClearLCD
         lcddisplay  OpMsg, first_line
-        goto        Stop
+        ; actual operation stuff goes
+        call        Delay1s
+        call        Delay1s
+        call        Delay1s
+        call        Delay1s
+        call        Delay1s
+        lcddisplay  OpComplete, first_line
+        call        Delay1s
+        call        Delay1s
+        goto        Menu
 
 Logs
         call        ClearLCD
-        lcddisplay  LogMsg, first_line
-        goto        Stop
+        lcddisplay  LogMsg1, first_line
+        lcddisplay  LogMsg2, second_line
+LogLoop
+        testkey     key_1, Menu
+        bra         LogLoop
 Stop
         bra         Stop
 
