@@ -88,7 +88,7 @@ beq         macro   literal, register, label
 testkey     macro   literal, label
             movlf   literal, keypad_test
             call    CheckButton
-            beq     d'1', keypad_test, label
+            beq     d'1', keypad_result, label
             endm
 
 ; ----------------------------------------------------------------------------
@@ -183,6 +183,7 @@ MenuLoop
         testkey     key_1, BeginOperation
         testkey     key_2, Logs
         bra         MenuLoop
+
 
 BeginOperation
         call        ClearLCD
