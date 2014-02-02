@@ -53,6 +53,19 @@
         temp_var1
         delay1
         delay2
+        delay3
+
+        current_light
+        light1
+        light2
+        light3
+        light4
+        light5
+        light6
+        light7
+        light8
+        light9
+
         keypad_data
         keypad_result
         keypad_test
@@ -79,9 +92,12 @@ beq         macro   literal, register, label
 ;            bz      label
 ;            endm
             movlw   literal
-            subwf   register
-            bz     label
+            subwf   register, f
+            decf    register, f
+            infsnz  register
+            goto    label
             endm
+
 ; ----------------------------------------------------------------------------
 ; LCD macros
 ; ----------------------------------------------------------------------------
@@ -89,12 +105,20 @@ beq         macro   literal, register, label
 ; ----------------------------------------------------------------------------
 ; Keypad macros
 ; ----------------------------------------------------------------------------
-; testkey:  Checks if key has been pressed, branches to label if so
-testkey     macro   literal, label
+; testkey: Checks if key has been pressed
+testkey     macro   literal
+            movlf   literal, keypad_test
+            call    CheckButton
+            endm
+
+; keygoto:  Checks if key has been pressed, branches to label if so
+keygoto     macro   literal, label
             movlf   literal, keypad_test
             call    CheckButton
             beq     d'1', keypad_result, label
             endm
+
+
 
 ; ----------------------------------------------------------------------------
 
@@ -129,6 +153,26 @@ writelcddata    macro
             call    WriteLCD
             endm
 ; ----------------------------------------------------------------------------
+displight       macro   register, table
+            ; move light's results to current_light to be displayed
+            movff   register, current_light
+            ; set LCD for line 1
+            movlw   b'10000000'
+            writelcdinst
+            ; move full address of table into Table Pointer
+            movlw   upper table
+            movwf   TBLPTRU
+            movlw   high table
+            movwf   TBLPTRH
+            movlw   low table
+            movwf   TBLPTRL
+            ; write character data to LCD
+            call    WriteLCDChar
+            call    WriteLCDLightResults
+            endm
+
+
+
 
 
 ; ============================================================================
@@ -147,13 +191,41 @@ writelcddata    macro
 ; ============================================================================
 
 WelcomeMsg              db      "Welcome User!", 0
-WelcomeMsg2             db      "Press any button to continue.", 0
+WelcomeMsg2             db      "Press any button", 0
 MenuMsg1                db      "Main Menu", 0
 MenuMsg2                db      "1:Begin, 2:Logs", 0
 OpMsg                   db      "Working...", 0
-OpComplete              db      "Operation complete", 0
+OpComplete              db      "Test complete", 0
 LogMsg1                 db      "Logs here", 0
 LogMsg2                 db      "1: Main Menu", 0
+
+OpResults               db      "Results:", 0
+
+Light1Msg               db      "Light 1: ", 0
+Light2Msg               db      "Light 2: ", 0
+Light3Msg               db      "Light 3: ", 0
+Light4Msg               db      "Light 4: ", 0
+Light5Msg               db      "Light 5: ", 0
+Light6Msg               db      "Light 6 : ", 0
+Light7Msg               db      "Light 7: ", 0
+Light8Msg               db      "Light 8: ", 0
+Light9Msg               db      "Light 9: ", 0
+
+working_3               db      "3 LEDs", 0
+working_2               db      "2 LEDs", 0
+working_1               db      "1 LEDs", 0
+working_0               db      "0 LEDs", 0
+not_present             db      "N/A", 0
+
+ResultsMenu             db      "1:Menu, 2:Next", 0
+
+AllResultsShown         db      "All results shown", 0
+ResultsDone1            db      "1:Main Menu", 0
+ResultsDone2            db      "2:Show again", 0
+
+
+
+
 
 
 ; ============================================================================
@@ -196,30 +268,76 @@ Menu
         lcddisplay  MenuMsg2, second_line
 
 MenuLoop
-        testkey     key_1, BeginOperation
-        testkey     key_2, Logs
+        keygoto     key_1, BeginOperation
+        keygoto     key_2, Logs
         bra         MenuLoop
 
 BeginOperation
         call        ClearLCD
         lcddisplay  OpMsg, first_line
-        ; actual operation stuff goes
+        ; actual operation stuff goes on here
         call        Delay1s
         call        Delay1s
         call        Delay1s
         call        Delay1s
         call        Delay1s
+        ; example light results
+        movlf       b'11', light1
+        movlf       b'10000000', light2
+        call        ClearLCD
         lcddisplay  OpComplete, first_line
         call        Delay1s
         call        Delay1s
-        goto        Menu
+        goto        DisplayOperation
+
+DisplayOperation
+        call        ClearLCD
+        lcddisplay  OpResults, first_line
+        call        Delay1s
+        call        Delay1s
+        call        Delay1s
+        goto        DisplayLight1
+
+DisplayLight1
+        call        ClearLCD
+        displight   light1, Light1Msg
+        lcddisplay  ResultsMenu, second_line
+DisplayLight1Loop
+        keygoto     key_1, Menu
+        keygoto     key_2, DisplayLight2
+        bra         DisplayLight1Loop
+
+DisplayLight2
+        call        ClearLCD
+        displight   light2, Light2Msg
+        lcddisplay  ResultsMenu, second_line
+DisplayLight2Loop
+        keygoto     key_1, Menu
+        keygoto     key_2, EndDisplay
+        bra         DisplayLight2Loop
+
+EndDisplay
+        call        ClearLCD
+        lcddisplay  AllResultsShown, first_line
+        call        Delay1s
+        call        Delay1s
+        call        Delay1s
+        call        Delay1s
+        call        ClearLCD
+        lcddisplay  ResultsDone1, first_line
+        lcddisplay  ResultsDone2, second_line
+EndDisplayLoop
+        keygoto     key_1, Menu
+        keygoto     key_2, DisplayLight1
+        bra         EndDisplayLoop
+
 
 Logs
         call        ClearLCD
         lcddisplay  LogMsg1, first_line
         lcddisplay  LogMsg2, second_line
 LogLoop
-        testkey     key_1, Menu
+        keygoto     key_1, Menu
         bra         LogLoop
 Stop
         bra         Stop
@@ -326,6 +444,76 @@ ClearLCD
         return
 
 ; ----------------------------------------------------------------------------
+; WriteLCDLightResults: Writes results of light test onto display
+; INPUT: current_light
+; OUTPUT: None
+; ----------------------------------------------------------------------------
+WriteLCDLightResults
+        beq         b'10000000', current_light, NotPresent
+        beq         b'0', current_light, ZeroWorking
+        beq         b'1', current_light, OneWorking
+        beq         b'10', current_light, TwoWorking
+        beq         b'11', current_light, ThreeWorking
+ZeroWorking
+       ; move full address of table into Table Pointer
+        movlw   upper working_0
+        movwf   TBLPTRU
+        movlw   high working_0
+        movwf   TBLPTRH
+        movlw   low working_0
+        movwf   TBLPTRL
+        ; write character data to LCD
+        call    WriteLCDChar
+        goto    EndWriteLCDLightResults
+NotPresent
+       ; move full address of table into Table Pointer
+        movlw   upper not_present
+        movwf   TBLPTRU
+        movlw   high not_present
+        movwf   TBLPTRH
+        movlw   low not_present
+        movwf   TBLPTRL
+        ; write character data to LCD
+        call    WriteLCDChar
+        goto    EndWriteLCDLightResults
+
+OneWorking
+       ; move full address of table into Table Pointer
+        movlw   upper working_1
+        movwf   TBLPTRU
+        movlw   high working_1
+        movwf   TBLPTRH
+        movlw   low working_1
+        movwf   TBLPTRL
+        ; write character data to LCD
+        call    WriteLCDChar
+        goto    EndWriteLCDLightResults
+TwoWorking
+       ; move full address of table into Table Pointer
+        movlw   upper working_2
+        movwf   TBLPTRU
+        movlw   high working_2
+        movwf   TBLPTRH
+        movlw   low working_2
+        movwf   TBLPTRL
+        ; write character data to LCD
+        call    WriteLCDChar
+        goto    EndWriteLCDLightResults
+ThreeWorking
+       ; move full address of table into Table Pointer
+        movlw   upper working_3
+        movwf   TBLPTRU
+        movlw   high working_3
+        movwf   TBLPTRH
+        movlw   low working_3
+        movwf   TBLPTRL
+        ; write character data to LCD
+        call    WriteLCDChar
+        goto    EndWriteLCDLightResults
+EndWriteLCDLightResults
+        return
+
+; ----------------------------------------------------------------------------
 ; Keypad Subroutines
 ; ----------------------------------------------------------------------------
 ; CheckAnyButton: Checks if any keypad button has been pressed
@@ -393,7 +581,18 @@ Delay5msLoop
         decfsz      delay2, f
 d2      bra         Delay5msLoop
         return
-
+; ----------------------------------------------------------------------------
+; Delay1s: Delays program for 1s
+; ----------------------------------------------------------------------------
+Delay1s
+        movlf       d'100', delay3
+Delay1sLoop
+        dcfsnz      delay3, f
+        goto        EndDelay1s
+        call        Delay5ms
+        bra         Delay1sLoop
+EndDelay1s
+        return
 
     end
 
