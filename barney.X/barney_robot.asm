@@ -50,11 +50,13 @@
 ; General Purpose Registers (using Access Bank)
 ; ============================================================================
     cblock          0x20
+        ; LCD/Delay registers
         temp_var1
         delay1
         delay2
         delay3
 
+        ; Light result registers
         current_light
         light1
         light2
@@ -66,6 +68,7 @@
         light8
         light9
 
+        ; Keypad registers
         keypad_data
         keypad_result
         keypad_test
@@ -85,23 +88,18 @@ movlf       macro   literal, register
             movwf   register
             endm
 
-; beq:      branches to label if register value == literal
+; beq:      goes to label if register value == literal
+; Note: I was having trouble with branch statement, changed it to use goto.
+; Decided to just decrement then increment back to see if it was zero
+; to make use of existing instruction set for skipping next instruction if
+; file register is zero.
 beq         macro   literal, register, label
-;            movf    register, W
-;            iorlw   literal
-;            bz      label
-;            endm
             movlw   literal
             subwf   register, f
             decf    register, f
             infsnz  register
             goto    label
             endm
-
-; ----------------------------------------------------------------------------
-; LCD macros
-; ----------------------------------------------------------------------------
-
 ; ----------------------------------------------------------------------------
 ; Keypad macros
 ; ----------------------------------------------------------------------------
@@ -110,20 +108,13 @@ testkey     macro   literal
             movlf   literal, keypad_test
             call    CheckButton
             endm
-
+; ----------------------------------------------------------------------------
 ; keygoto:  Checks if key has been pressed, branches to label if so
 keygoto     macro   literal, label
             movlf   literal, keypad_test
             call    CheckButton
             beq     d'1', keypad_result, label
             endm
-
-
-
-; ----------------------------------------------------------------------------
-
-
-
 ; ----------------------------------------------------------------------------
 ; LCD macros
 ; ----------------------------------------------------------------------------
@@ -143,16 +134,20 @@ lcddisplay  macro   Table, Line
             call    WriteLCDChar
             endm
 ; ----------------------------------------------------------------------------
+; writelcdinst: Sets LCD for instruction mode, then writes given instruction
+; to display
 writelcdinst    macro
             bcf     LCD_RS
             call    WriteLCD
             endm
 ; ----------------------------------------------------------------------------
+; writelcddata: Sets LCD for data mode, then writes given data to display.
 writelcddata    macro
             bsf     LCD_RS
             call    WriteLCD
             endm
 ; ----------------------------------------------------------------------------
+; displight: Displays given light's tested results on LCD display
 displight       macro   register, table
             ; move light's results to current_light to be displayed
             movff   register, current_light
@@ -171,12 +166,8 @@ displight       macro   register, table
             call    WriteLCDLightResults
             endm
 
-
-
-
-
 ; ============================================================================
-; Start of code
+; Vectors
 ; ============================================================================
         org         0x00        ; Reset vector
         goto        Main
@@ -233,6 +224,8 @@ ResultsDone2            db      "2:Show again", 0
 ; ============================================================================
 
 Main
+; ----------------------------------------------------------------------------
+; Configure- Sets up machine for use.
 Configure
         ; set all ports to output
         clrf        TRISA
@@ -247,10 +240,9 @@ Configure
         clrf        PORTD
         clrf        PORTE
 
-
-        call        ConfigureLCD
-
-
+        call        ConfigureLCD                ; Initializes LCD, sets parameters needed
+; ----------------------------------------------------------------------------
+; Welcome - Initially shown on start up until user presses a button.
 WelcomeScreen
         call        ClearLCD
         ;display first and secondlines of welcome message
@@ -259,19 +251,23 @@ WelcomeScreen
 
 WelcomeLoop
         call        CheckAnyButton
-        beq         d'1', keypad_result, Menu    ; if key has not been pressed
-        bra         WelcomeLoop         ; continue looping
-
+        beq         d'1', keypad_result, Menu   ; if key has not been pressed
+        bra         WelcomeLoop                 ; continue looping
+; ----------------------------------------------------------------------------
+; Main Menu- From here user can begin an operation or access previous operation
+; logs.
 Menu
-        call        ClearLCD
+        call        ClearLCD                    ;Clears LCD Screen
+        ; Display menu message
         lcddisplay  MenuMsg1, first_line
         lcddisplay  MenuMsg2, second_line
-
 MenuLoop
+        ; Wait until user has pressed 1 to begin or 2 for logs.
         keygoto     key_1, BeginOperation
         keygoto     key_2, Logs
         bra         MenuLoop
-
+; ----------------------------------------------------------------------------
+; Begin Operation- TODO: Manages all motors and sensors needed to test LCD.
 BeginOperation
         call        ClearLCD
         lcddisplay  OpMsg, first_line
@@ -284,39 +280,45 @@ BeginOperation
         ; example light results
         movlf       b'11', light1
         movlf       b'10000000', light2
-        call        ClearLCD
-        lcddisplay  OpComplete, first_line
+        call        ClearLCD                    ; clear the LCD
+        lcddisplay  OpComplete, first_line      ; Operation is done
         call        Delay1s
         call        Delay1s
         goto        DisplayOperation
-
+; ----------------------------------------------------------------------------
+; Display Operation - Tells user results are about to be shown.  Then displays
+; each individual light's results.
 DisplayOperation
-        call        ClearLCD
-        lcddisplay  OpResults, first_line
+        call        ClearLCD                    ; clear the LCD
+        lcddisplay  OpResults, first_line       ; displays "Results:"
         call        Delay1s
         call        Delay1s
         call        Delay1s
         goto        DisplayLight1
-
+; ----------------------------------------------------------------------------
 DisplayLight1
         call        ClearLCD
-        displight   light1, Light1Msg
+        displight   light1, Light1Msg           ; display results from light 1
         lcddisplay  ResultsMenu, second_line
 DisplayLight1Loop
+        ; user presses 1- go to main menu, 2- go to next light
         keygoto     key_1, Menu
         keygoto     key_2, DisplayLight2
         bra         DisplayLight1Loop
-
+; ----------------------------------------------------------------------------
 DisplayLight2
         call        ClearLCD
-        displight   light2, Light2Msg
+        displight   light2, Light2Msg           ; display results from light 2
         lcddisplay  ResultsMenu, second_line
 DisplayLight2Loop
+        ; user presses 1- go to main menu, 2- go to next light
         keygoto     key_1, Menu
         keygoto     key_2, EndDisplay
         bra         DisplayLight2Loop
-
+; ----------------------------------------------------------------------------
 EndDisplay
+        ; Prompt user whether they want to display results again or go back
+        ; to the main menu.
         call        ClearLCD
         lcddisplay  AllResultsShown, first_line
         call        Delay1s
@@ -327,11 +329,13 @@ EndDisplay
         lcddisplay  ResultsDone1, first_line
         lcddisplay  ResultsDone2, second_line
 EndDisplayLoop
+        ; user presses 1- go to main menu, 2- display results again
         keygoto     key_1, Menu
         keygoto     key_2, DisplayLight1
         bra         EndDisplayLoop
-
-
+; ----------------------------------------------------------------------------
+; Logs- TODO: will eventually contain code showing user results of previous
+; operations.
 Logs
         call        ClearLCD
         lcddisplay  LogMsg1, first_line
@@ -339,8 +343,8 @@ Logs
 LogLoop
         keygoto     key_1, Menu
         bra         LogLoop
-Stop
-        bra         Stop
+; ----------------------------------------------------------------------------
+
 
 ; ============================================================================
 ; Subroutines
@@ -449,22 +453,13 @@ ClearLCD
 ; OUTPUT: None
 ; ----------------------------------------------------------------------------
 WriteLCDLightResults
+        ; branches to different part of code depending on if light is present
+        ; and how many LEDs are working
         beq         b'10000000', current_light, NotPresent
         beq         b'0', current_light, ZeroWorking
         beq         b'1', current_light, OneWorking
         beq         b'10', current_light, TwoWorking
         beq         b'11', current_light, ThreeWorking
-ZeroWorking
-       ; move full address of table into Table Pointer
-        movlw   upper working_0
-        movwf   TBLPTRU
-        movlw   high working_0
-        movwf   TBLPTRH
-        movlw   low working_0
-        movwf   TBLPTRL
-        ; write character data to LCD
-        call    WriteLCDChar
-        goto    EndWriteLCDLightResults
 NotPresent
        ; move full address of table into Table Pointer
         movlw   upper not_present
@@ -476,7 +471,17 @@ NotPresent
         ; write character data to LCD
         call    WriteLCDChar
         goto    EndWriteLCDLightResults
-
+ZeroWorking
+       ; move full address of table into Table Pointer
+        movlw   upper working_0
+        movwf   TBLPTRU
+        movlw   high working_0
+        movwf   TBLPTRH
+        movlw   low working_0
+        movwf   TBLPTRL
+        ; write character data to LCD
+        call    WriteLCDChar
+        goto    EndWriteLCDLightResults
 OneWorking
        ; move full address of table into Table Pointer
         movlw   upper working_1
