@@ -24,12 +24,17 @@
 
 ; ============================================================================
 ; Constant Definitions
-; ===========================================================================
+; ============================================================================
+; ----------------------------------------------------------------------------
+; LCD related definitions
+; ----------------------------------------------------------------------------
 #define     first_line  B'10000000'
 #define     second_line B'11000000'
 #define     LCD_RS      PORTD, 2
 #define     LCD_E       PORTD, 3
-
+; ----------------------------------------------------------------------------
+; keypad inputs and corresponding decimal values
+; ----------------------------------------------------------------------------
 #define     key_1       d'0'
 #define     key_2       d'1'
 #define     key_3       d'2'
@@ -49,13 +54,14 @@
 ; ============================================================================
 ; General Purpose Registers (using Access Bank)
 ; ============================================================================
-temp_var1       EQU     0x20
-delay1          EQU     0x21
-delay2          EQU     0x22
+temp_var1       EQU     0x20        ; general variable to be used temporarily
+delay1          EQU     0x21        ; variable used in delay counter
+delay2          EQU     0x22        ; variable used in delay counter
+delay3          EQU     0x26
 
-keypad_data     EQU     0x23
-keypad_result   EQU     0x24
-keypad_test     EQU     0x25
+keypad_data     EQU     0x23        ; holds input from keypad (PORTB)
+keypad_result   EQU     0x24        ; is entered value is equal to keypad_test?
+keypad_test     EQU     0x25        ; holds key value that is to be tested
 
 
 
@@ -73,10 +79,6 @@ movlf       macro   literal, register
 
 ; beq:      branches to label if register value == literal
 beq         macro   literal, register, label
-;            movf    register, W
-;            iorlw   literal
-;            bz      label
-;            endm
             movlw   literal
             subwf   register
             bz     label
@@ -118,16 +120,24 @@ lcddisplay  macro   Table, Line
             call    WriteLCDChar
             endm
 ; ----------------------------------------------------------------------------
+; writelcdinst: Writes an instruction in W to the LCD display
 writelcdinst    macro
             bcf     LCD_RS
             call    WriteLCD
             endm
 ; ----------------------------------------------------------------------------
+; writelcddata: Writes data in W to the LCD display
 writelcddata    macro
             bsf     LCD_RS
             call    WriteLCD
             endm
 ; ----------------------------------------------------------------------------
+lcdshift        macro   Line
+            movlw   Line
+            writelcdinst
+            movlw   b'00011000'
+            writelcdinst
+            endm
 
 
 ; ============================================================================
@@ -150,7 +160,7 @@ WelcomeMsg2             db      "Press any button to continue.", 0
 MenuMsg1                db      "Main Menu"
 MenuMsg2                db      "1:Begin, 2:Logs"
 OpMsg                   db      "Operation Begins"
-LogMsg                  db      "Logs here"
+LogMsg                  db      "Logs here until here therefore unsi"
 
 
 ; ============================================================================
@@ -158,6 +168,7 @@ LogMsg                  db      "Logs here"
 ; ============================================================================
 
 Main
+; ----------------------------------------------------------------------------
 Configure
         ; set all ports to output
         clrf        TRISA
@@ -173,39 +184,47 @@ Configure
         clrf        PORTE
 
 
-        call        ConfigureLCD
-
+        call        ConfigureLCD                ; configure LCD for use
+; ----------------------------------------------------------------------------
 
 WelcomeScreen
-        call        ClearLCD
-        ;display first and secondlines of welcome message
+        call        ClearLCD                    ; clear LCD screen
+
+        ;display welcome message
         lcddisplay  WelcomeMsg, first_line
         lcddisplay  WelcomeMsg2, second_line
 
 WelcomeLoop
-        call        CheckAnyButton
-        beq         d'1', keypad_result, Menu    ; if key has not been pressed
-        bra         WelcomeLoop         ; continue looping
-
+        call        CheckAnyButton              ; check if any button is pressed
+        beq         d'1', keypad_result, Menu   ; if key has not been pressed
+        bra         WelcomeLoop                 ; continue looping
+; ----------------------------------------------------------------------------
 Menu
-        call        ClearLCD
+        call        ClearLCD                    ; clear LCD of previous message
+
+        ;display menu message- options are operation or logs
         lcddisplay  MenuMsg1, first_line
         lcddisplay  MenuMsg2, second_line
 
-MenuLoop
-        testkey     key_1, BeginOperation
-        testkey     key_2, Logs
+MenuLoop                                        ; loop until 1 or 2 is pressed
+        testkey     key_1, BeginOperation       ; if 1 is pressed, begin operating
+        testkey     key_2, Logs                 ; if 2 is pressed, access logs
         bra         MenuLoop
-
+; ----------------------------------------------------------------------------
 BeginOperation
-        call        ClearLCD
+        call        ClearLCD                    ; clear LCD of previous message
         lcddisplay  OpMsg, first_line
         goto        Stop
-
+; ----------------------------------------------------------------------------
 Logs
         call        ClearLCD
         lcddisplay  LogMsg, first_line
+        call        Delay1s
+        lcdshift    first_line
+        call        Delay1s
+        lcdshift    first_line
         goto        Stop
+; ----------------------------------------------------------------------------
 Stop
         bra         Stop
 
@@ -249,12 +268,12 @@ ConfigureLCD
 ; ----------------------------------------------------------------------------
 WriteLCD
         movwf       temp_var1       ; store W into a temporary register
-        call        MovMSB
-        call        ClockLCD
+        call        MovMSB          ; moves 4 MSBs of W to PORTD
+        call        ClockLCD        ; sends PORTD to LCD
         swapf       temp_var1, w    ; swap nibbles
-        call        MovMSB
-        call        ClockLCD
-        call        Delay5ms
+        call        MovMSB          ; moves 4 LSBs of W to PORTD
+        call        ClockLCD        ; sends pORTD to LCD
+        call        Delay5ms        ; 5 ms delay
         return
 ; ----------------------------------------------------------------------------
 ; WriteLCDChar: Displays the characters in the table pointer on LCD
@@ -276,20 +295,19 @@ CharReadLoop
 ; OUTPUT: None
 ; ----------------------------------------------------------------------------
 ClockLCD
-        bsf         LCD_E
-        nop
+        bsf         LCD_E           ; set enable bit to transmit information
+        call        Delay5ms        ; wait until information has been read
         call        Delay5ms
-        call        Delay5ms
-        bcf         LCD_E
+        bcf         LCD_E           ; clear enable bit - transfer is over
         call        Delay44us
         return
 ; ----------------------------------------------------------------------------
-; MovMSB: Move the MSB of W to PORTD without disturbing LSB
+; MovMSB: Move the MSBs of W to PORTD without disturbing LSBs
 ; INPUT: W
 ; OUTPUT: None
 ; ----------------------------------------------------------------------------
 MovMSB
-        andlw       0xF0
+        andlw       0xF0            ; masks all but 4 MSBs
         iorwf       PORTD, f
         iorlw       0x0F
         andwf       PORTD, f
@@ -300,15 +318,15 @@ MovMSB
 ; OUTPUT: None
 ; ----------------------------------------------------------------------------
 ClearLCD
-        movlw       B'11000000'
+        movlw       B'10000000'     ; set for line 1
         writelcdinst
-        movlw       B'00000001'
-        writelcdinst
-        movlw       B'10000000'
-        writelcdinst
-        movlw       B'00000001'
+        movlw       B'00000001'     ; clear line 1
         writelcdinst
         return
+        movlw       B'11000000'     ; set for line 2
+        writelcdinst
+        movlw       B'00000001'     ; clear line 2
+        writelcdinst
 
 ; ----------------------------------------------------------------------------
 ; Keypad Subroutines
@@ -318,15 +336,15 @@ ClearLCD
 ; OUTPUT: keypad_result (1 if button has been pressed, 0 otherwise)
 ; ----------------------------------------------------------------------------
 CheckAnyButton
-        movff       PORTB, keypad_data
-        btfsc       keypad_data, 1
-        goto        AnyPressed ; a key has been pressed
+        movff       PORTB, keypad_data  ; put keypad output into keypad_data
+        btfsc       keypad_data, 1      ; if a key has been pressed...
+        goto        AnyPressed          ; ...go to AnyPressed
 
-        movlf       B'0', keypad_result
+        movlf       B'0', keypad_result ; if not, set keypad_result to 0
         goto        EndCheckAnyButton
 
 AnyPressed
-        movlf       B'1', keypad_result
+        movlf       B'1', keypad_result ; key has been pressed, keypad_result is 1
 
 EndCheckAnyButton
         return
@@ -337,19 +355,20 @@ EndCheckAnyButton
 ; OUTPUT: keypad_result (sets bit 7 if no press)
 ; ----------------------------------------------------------------------------
 CheckButton
-        movff       PORTB, keypad_data
-        btfss       keypad_data, 1      ;test if any data is input
-        goto        NoButtonPressed
+        movff       PORTB, keypad_data      ; move keypad output to keypad_data
+        btfss       keypad_data, 1          ; test if any data is input...
+        goto        NoButtonPressed         ; ...if not, no button has been pressed
 
-        swapf       keypad_data, W
-        andlw       B'00001111'
-        subwf       keypad_test, w
-        bnz         NoButtonPressed
+        swapf       keypad_data, W          ; swap bits <7:4> of keypad with <3:1>
+        andlw       B'00001111'             ; mask all other nonrelevant bits
+        subwf       keypad_test, w          ; subtract tested value from actual
+        bnz         NoButtonPressed         ; if not zero, our target button has
+                                            ; not been pressed-same thing as no button pressed
 
-        movlf        d'1', keypad_result
+        movlf        d'1', keypad_result    ; if zero, target button has been pressed
         bra          EndCheckButton
 NoButtonPressed
-        movlf       d'0', keypad_result
+        movlf       d'0', keypad_result     ; result is 0, target not pressed
         goto        EndCheckButton
 EndCheckButton
         return
@@ -377,6 +396,18 @@ Delay5msLoop
         bra         d2
         decfsz      delay2, f
 d2      bra         Delay5msLoop
+        return
+; ----------------------------------------------------------------------------
+; Delay1s: Delays program for 1s
+; ----------------------------------------------------------------------------
+Delay1s
+        movlf       d'100', delay3
+Delay1sLoop
+        dcfsnz      delay3, f
+        goto        EndDelay1s
+        call        Delay5ms
+        bra         Delay1sLoop
+EndDelay1s
         return
 
 
