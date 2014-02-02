@@ -82,6 +82,10 @@ beq         macro   literal, register, label
             bz     label
             endm
 ; ----------------------------------------------------------------------------
+; LCD macros
+; ----------------------------------------------------------------------------
+
+; ----------------------------------------------------------------------------
 ; Keypad macros
 ; ----------------------------------------------------------------------------
 ; testkey:  Checks if key has been pressed, branches to label if so
@@ -102,7 +106,7 @@ testkey     macro   literal, label
 lcddisplay  macro   Table, Line
             ; If Line = 10000000, use Line 1; if Line = 11000000, use Line 2
             movlw   Line
-            call    WriteLCDInst
+            writelcdinst
             ; move full address of table into Table Pointer
             movlw   upper Table
             movwf   TBLPTRU
@@ -112,6 +116,16 @@ lcddisplay  macro   Table, Line
             movwf   TBLPTRL
             ; write character data to LCD
             call    WriteLCDChar
+            endm
+; ----------------------------------------------------------------------------
+writelcdinst    macro
+            bcf     LCD_RS
+            call    WriteLCD
+            endm
+; ----------------------------------------------------------------------------
+writelcddata    macro
+            bsf     LCD_RS
+            call    WriteLCD
             endm
 ; ----------------------------------------------------------------------------
 
@@ -170,9 +184,8 @@ WelcomeScreen
 
 WelcomeLoop
         call        CheckAnyButton
-        btfss       keypad_result, 0       ; if key has not been pressed
+        beq         d'1', keypad_result, Menu    ; if key has not been pressed
         bra         WelcomeLoop         ; continue looping
-        goto        Menu                ; key has been pressed, go to Menu
 
 Menu
         call        ClearLCD
@@ -183,7 +196,6 @@ MenuLoop
         testkey     key_1, BeginOperation
         testkey     key_2, Logs
         bra         MenuLoop
-
 
 BeginOperation
         call        ClearLCD
@@ -214,29 +226,28 @@ ConfigureLCD
         call        Delay5ms
         ; set for 8 bit
         movlw       B'00110011'
-        call        WriteLCDInst
+        writelcdinst
         ; set for 8 bit again then 4 bit
         movlw       B'00110010'
-        call        WriteLCDInst
+        writelcdinst
         ; 4 bits, 2 lines, 5x7 dot
         movlw       B'00101000'
-        call        WriteLCDInst
+        writelcdinst
         ; display on/off
         movlw       B'00001100'
-        call        WriteLCDInst
+        writelcdinst
         ; Entry mode
         movlw       B'00000110'
-        call        WriteLCDInst
+        writelcdinst
         ; clear ram
         call        ClearLCD
         return
 ; ----------------------------------------------------------------------------
-; WriteLCDInst: Writes an instruction to the LCD to set its configuration
+; WriteLCD: Writes data/instructions to the LCD
 ; INPUT: W
 ; OUTPUT: None
 ; ----------------------------------------------------------------------------
-WriteLCDInst
-        bcf         LCD_RS          ; clear Register Status for instruction mode
+WriteLCD
         movwf       temp_var1       ; store W into a temporary register
         call        MovMSB
         call        ClockLCD
@@ -254,27 +265,11 @@ WriteLCDChar
         tblrd*                      ; copy byte pointed to by TBLPTR into TABLAT
         movf        TABLAT, W       ; move contents of TABLAT into W
 CharReadLoop
-        call        WriteLCDData    ; write the contents of W into the LCD
+        writelcddata                ; write the contents of W into the LCD
         tblrd+*                     ; read next byte into TABLAT
         movf        TABLAT, W       ; move contents of TABLAT into W
         bnz         CharReadLoop    ; all bytes have been read once 0 is reached
         return
-; ----------------------------------------------------------------------------
-; WriteLCDData: Writes data given in W register to LCD
-; INPUT: W
-; OUTPUT: None
-; ----------------------------------------------------------------------------
-WriteLCDData
-        bsf         LCD_RS          ; set Register Status bit for data mode
-        movwf       temp_var1       ; store character into temorary variable
-        call        MovMSB
-        call        ClockLCD
-        swapf       temp_var1, w    ; swap nibbles
-        call        MovMSB
-        call        ClockLCD
-        call        Delay5ms       ; wait for LCD to process
-        return
-
 ; ----------------------------------------------------------------------------
 ; ClockLCD: Pulses enable bit to transmit information to LCD
 ; INPUT: None
@@ -306,13 +301,13 @@ MovMSB
 ; ----------------------------------------------------------------------------
 ClearLCD
         movlw       B'11000000'
-        call        WriteLCDInst
+        writelcdinst
         movlw       B'00000001'
-        call        WriteLCDInst
+        writelcdinst
         movlw       B'10000000'
-        call        WriteLCDInst
+        writelcdinst
         movlw       B'00000001'
-        call        WriteLCDInst
+        writelcdinst
         return
 
 ; ----------------------------------------------------------------------------
