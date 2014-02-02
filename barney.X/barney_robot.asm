@@ -346,18 +346,10 @@ CheckButton
         subwf       keypad_test, w
         bnz         NoButtonPressed
 
-; hold, wait for user to unpress
-CheckForKeypress_Loop
-        movff       PORTB, keypad_data
-        btfsc       keypad_data, 1
-        bra         CheckForKeypress_Loop
-
         movlf        d'1', keypad_result
         bra          EndCheckButton
-
 NoButtonPressed
         movlf       d'0', keypad_result
-        movff       keypad_result, PORTC
         goto        EndCheckButton
 EndCheckButton
         return
