@@ -4,6 +4,8 @@
 ; ============================================================================
 
 #include <p18f4620.inc>
+#include <i2c_common.asm>
+#include <rtc_macros.inc>
 		list P=18F4620, F=INHX32, C=160, N=80, ST=OFF, MM=OFF, R=DEC
 
 ; ============================================================================
@@ -210,7 +212,7 @@ not_present             db      "N/A", 0
 
 ResultsMenu             db      "1:Menu, 2:Next", 0
 
-AllResultsShown         db      "All results shown", 0
+AllResultsShown         db      "All lights shown", 0
 ResultsDone1            db      "1:Main Menu", 0
 ResultsDone2            db      "2:Show again", 0
 
@@ -539,7 +541,7 @@ EndCheckAnyButton
 
 ; ----------------------------------------------------------------------------
 ; CheckButton: Checks for keypad button, returns button info
-; INPUT: None
+; INPUT: keypad_test
 ; OUTPUT: keypad_result (sets bit 7 if no press)
 ; ----------------------------------------------------------------------------
 CheckButton
