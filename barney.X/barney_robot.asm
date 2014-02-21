@@ -29,6 +29,8 @@
 #define     second_line B'11000000'
 #define     LCD_RS      PORTD, 2
 #define     LCD_E       PORTD, 3
+#define     MOTOR_CCW   PORTC, 5
+#define     MOTOR_CW    PORTC, 6
 
 #define     key_1       d'0'
 #define     key_2       d'1'
@@ -44,7 +46,7 @@
 #define     key_C       d'11'
 #define     key_star    d'12'
 #define     key_0       d'13'
-#define     key_#       d'14'
+#define     key_pound   d'14'
 #define     key_D       d'15'
 ; ============================================================================
 ; General Purpose Registers (using Access Bank)
@@ -95,9 +97,9 @@ movlf       macro   literal, register
 ; file register is zero.
 beq         macro   literal, register, label
             movlw   literal
-            subwf   register, f
-            decf    register, f
-            infsnz  register
+            subwf   register, W
+            decf    WREG, W
+            infsnz  WREG
             goto    label
             endm
 ; ----------------------------------------------------------------------------
@@ -197,25 +199,22 @@ Light2Msg               db      "Light 2: ", 0
 Light3Msg               db      "Light 3: ", 0
 Light4Msg               db      "Light 4: ", 0
 Light5Msg               db      "Light 5: ", 0
-Light6Msg               db      "Light 6 : ", 0
+Light6Msg               db      "Light 6: ", 0
 Light7Msg               db      "Light 7: ", 0
 Light8Msg               db      "Light 8: ", 0
 Light9Msg               db      "Light 9: ", 0
 
 working_3               db      "3 LEDs", 0
 working_2               db      "2 LEDs", 0
-working_1               db      "1 LEDs", 0
+working_1               db      "1 LED", 0
 working_0               db      "0 LEDs", 0
 not_present             db      "N/A", 0
 
 ResultsMenu             db      "1:Menu, 2:Next", 0
 
-AllResultsShown         db      "All results shown", 0
+AllResultsShown         db      "All lights shown", 0
 ResultsDone1            db      "1:Main Menu", 0
 ResultsDone2            db      "2:Show again", 0
-
-
-
 
 
 
@@ -229,16 +228,24 @@ Main
 Configure
         ; set all ports to output
         clrf        TRISA
-        movlw       b'11110010'
-        movwf       TRISB
+        clrf        TRISB
         clrf        TRISC
         clrf        TRISD
+        clrf        TRISE
         ; clear all ports
         clrf        PORTA
         clrf        PORTB
         clrf        PORTC
         clrf        PORTD
         clrf        PORTE
+        ; configure PORTB for keypad
+        movlw       b'11110010'
+        movwf       TRISB
+        ; TODO: configure PORTC for motor, RTC, emergency stop switch
+        ; Motor- RC<6:5>
+        movlw       b'10011111'
+
+
 
         call        ConfigureLCD                ; Initializes LCD, sets parameters needed
 ; ----------------------------------------------------------------------------
@@ -272,18 +279,16 @@ BeginOperation
         call        ClearLCD
         lcddisplay  OpMsg, first_line
         ; actual operation stuff goes on here
-        call        Delay1s
-        call        Delay1s
-        call        Delay1s
-        call        Delay1s
-        call        Delay1s
-        ; example light results
-        movlf       b'11', light1
-        movlf       b'10000000', light2
+        call        OperateMotorForwards
+        call        Delay500ms
+        call        ReadSensorInput
+        call        Delay500ms
+        call        OperateMotorBackwards
+        call        Delay500ms
         call        ClearLCD                    ; clear the LCD
         lcddisplay  OpComplete, first_line      ; Operation is done
         call        Delay1s
-        call        Delay1s
+        ;call        Delay1s
         goto        DisplayOperation
 ; ----------------------------------------------------------------------------
 ; Display Operation - Tells user results are about to be shown.  Then displays
@@ -347,6 +352,22 @@ LogLoop
 ; ============================================================================
 ; Subroutines
 ; ============================================================================
+; ----------------------------------------------------------------------------
+; Motor Subroutines
+; ----------------------------------------------------------------------------
+; OperateMotorForwards: Operates motor forward by setting pin connecting to
+; "counterclockwise" circuit
+; INPUT: None
+; OUTPUT: None
+; ----------------------------------------------------------------------------
+OperateMotorForwards
+        bsf         MOTOR_CCW       ; send high signal to CCW circuit
+        call        MotorDelay      ; delay so motor can turn
+        return
+
+
+
+
 ; ----------------------------------------------------------------------------
 ; LCD Subroutines
 ; ----------------------------------------------------------------------------
@@ -453,22 +474,11 @@ ClearLCD
 WriteLCDLightResults
         ; branches to different part of code depending on if light is present
         ; and how many LEDs are working
-        beq         b'10000000', current_light, NotPresent
         beq         b'0', current_light, ZeroWorking
         beq         b'1', current_light, OneWorking
         beq         b'10', current_light, TwoWorking
         beq         b'11', current_light, ThreeWorking
-NotPresent
-       ; move full address of table into Table Pointer
-        movlw   upper not_present
-        movwf   TBLPTRU
-        movlw   high not_present
-        movwf   TBLPTRH
-        movlw   low not_present
-        movwf   TBLPTRL
-        ; write character data to LCD
-        call    WriteLCDChar
-        goto    EndWriteLCDLightResults
+        beq         b'10000000', current_light, NotPresent
 ZeroWorking
        ; move full address of table into Table Pointer
         movlw   upper working_0
@@ -480,6 +490,19 @@ ZeroWorking
         ; write character data to LCD
         call    WriteLCDChar
         goto    EndWriteLCDLightResults
+
+NotPresent
+       ; move full address of table into Table Pointer
+        movlw   upper not_present
+        movwf   TBLPTRU
+        movlw   high not_present
+        movwf   TBLPTRH
+        movlw   low not_present
+        movwf   TBLPTRL
+        ; write character data to LCD
+        call    WriteLCDChar
+        goto    EndWriteLCDLightResults
+
 OneWorking
        ; move full address of table into Table Pointer
         movlw   upper working_1
@@ -539,7 +562,7 @@ EndCheckAnyButton
 
 ; ----------------------------------------------------------------------------
 ; CheckButton: Checks for keypad button, returns button info
-; INPUT: None
+; INPUT: keypad_test
 ; OUTPUT: keypad_result (sets bit 7 if no press)
 ; ----------------------------------------------------------------------------
 CheckButton
@@ -585,10 +608,22 @@ Delay5msLoop
 d2      bra         Delay5msLoop
         return
 ; ----------------------------------------------------------------------------
+; Delay500ms: Delays program for 500ms
+; ----------------------------------------------------------------------------
+Delay500ms
+        movlf       d'100', delay3
+Delay500msLoop
+        dcfsnz      delay3, f
+        goto        EndDelay500ms
+        call        Delay5ms
+        bra         Delay500msLoop
+EndDelay500ms
+        return
+; ----------------------------------------------------------------------------
 ; Delay1s: Delays program for 1s
 ; ----------------------------------------------------------------------------
 Delay1s
-        movlf       d'100', delay3
+        movlf       d'200', delay3
 Delay1sLoop
         dcfsnz      delay3, f
         goto        EndDelay1s
@@ -596,7 +631,23 @@ Delay1sLoop
         bra         Delay1sLoop
 EndDelay1s
         return
-
+; ----------------------------------------------------------------------------
+; DelayMotor: TODO: Delays program for 10s for motor to turn, determined through
+; experimentation
+; ----------------------------------------------------------------------------
+DelayMotor
+        call        Delay1s
+        call        Delay1s
+        call        Delay1s
+        call        Delay1s
+        call        Delay1s
+        call        Delay1s
+        call        Delay1s
+        call        Delay1s
+        call        Delay1s
+        call        Delay1s
+EndDelayMotor
+        return
     end
 
 
