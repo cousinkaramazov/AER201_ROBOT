@@ -281,9 +281,11 @@ BeginOperation
         ; actual operation stuff goes on here
         call        OperateMotorForwards
         call        Delay500ms
-        call        ReadSensorInput
+        ;call        ReadSensorInput
         call        Delay500ms
         call        OperateMotorBackwards
+        movlf       b'1', light1
+        movlf       b'10', light2
         call        Delay500ms
         call        ClearLCD                    ; clear the LCD
         lcddisplay  OpComplete, first_line      ; Operation is done
@@ -364,9 +366,18 @@ OperateMotorForwards
         bsf         MOTOR_CCW       ; send high signal to CCW circuit
         call        MotorDelay      ; delay so motor can turn
         return
-
-
-
+; ----------------------------------------------------------------------------
+; OperateMotorBackwards: Operates motor backwards by setting pin connecting to
+; "clockwise" circuit
+; INPUT: None
+; OUTPUT: None
+; ----------------------------------------------------------------------------
+OperateMotorBackwards
+        bcf         MOTOR_CCW
+        bsf         MOTOR_CW
+        call        MotorDelay
+        bcf         MOTOR_CW
+        return
 
 ; ----------------------------------------------------------------------------
 ; LCD Subroutines
@@ -632,20 +643,20 @@ Delay1sLoop
 EndDelay1s
         return
 ; ----------------------------------------------------------------------------
-; DelayMotor: TODO: Delays program for 10s for motor to turn, determined through
+; MotorDelay: TODO: Delays program for 10s for motor to turn, determined through
 ; experimentation
 ; ----------------------------------------------------------------------------
-DelayMotor
+MotorDelay
         call        Delay1s
-        call        Delay1s
-        call        Delay1s
-        call        Delay1s
-        call        Delay1s
-        call        Delay1s
-        call        Delay1s
-        call        Delay1s
-        call        Delay1s
-        call        Delay1s
+        ;call        Delay1s
+        ;call        Delay1s
+        ;call        Delay1s
+        ;call        Delay1s
+        ;call        Delay1s
+        ;call        Delay1s
+        ;call        Delay1s
+        ;call        Delay1s
+        ;call        Delay1s
 EndDelayMotor
         return
     end
