@@ -382,7 +382,7 @@ i2c_write       macro
 ; ============================================================================
 ; Tables
 ; ============================================================================
-BlankLine               db      "", 0
+BlankLine               db      "  ", 0
 
 WelcomeMsg              db      "Welcome User!", 0
 WelcomeMsg2             db      "Press any button", 0
@@ -497,6 +497,7 @@ WelcomeLoop
 ; Main Menu- From here user can begin an operation or access previous operation
 ; logs.
 Menu
+        movlf       '0', display_flag
         call        ClearLCD                    ;Clears LCD Screen
         ; Display menu message
         lcddisplay  MenuMsg1, first_line
@@ -550,7 +551,7 @@ DisplayOperation
         goto        DisplayLight1
 ; ----------------------------------------------------------------------------
 DisplayLight1
-        bsf         display_flag, 0
+        movlf       b'11111111', display_flag
         call        ClearLCD
         displight   light1, Light1Msg           ; display results from light 1
         movff       light1, display_light
@@ -671,7 +672,7 @@ DisplayLight9Loop
 EndDisplay
         ; Prompt user whether they want to display results again or go back
         ; to the main menu.
-        bcf         display_flag, 0
+        movlf       b'00000000', display_flag
         call        ClearLCD
         lcddisplay  AllResultsShown, first_line
         store_disp1 AllResultsShown
@@ -695,6 +696,7 @@ EndDisplayLoop
 ; operations.
 ; ----------------------------------------------------------------------------
 LogMenu
+        movlf       d'0', display_flag
         call        ClearLCD
         lcddisplay  LogMsg1, first_line
         store_disp1 LogMsg1
@@ -924,13 +926,15 @@ EndPollEStopLoop
         call        Delay1s
         call        ClearLCD
         btfss       display_flag, 0
-        goto        ReDisplayLight
         goto        ReDisplayGeneral
-        return
-ReDisplayLight
-        redisp_light display_light
+        goto        ReDisplayLight
 ReDisplayGeneral
         redisp
+        goto        EndPollEStop
+ReDisplayLight
+        redisp_light display_light
+        goto        EndPollEStop
+
 EndPollEStop
         return
 
