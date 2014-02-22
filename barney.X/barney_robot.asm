@@ -2,6 +2,7 @@
 ; AER201 LED Testing Machine
 ; Programmer: Matthew MacKay
 ; ============================================================================
+    ERRORLEVEL  -207, -205
 
 #include <p18f4620.inc>
 		list P=18F4620, F=INHX32, C=160, N=80, ST=OFF, MM=OFF, R=DEC
@@ -90,6 +91,7 @@
         loop_count
         log_light1
         log_light2
+        temp_light
         log_to_show
 
         ; Keypad registers
@@ -132,41 +134,66 @@ beq         macro   literal, register, label
 eeprom_read macro   address_high, address, register
             movlw   address_high
             movwf   EEADRH          ; Upper bits of Data Memory Address to read
-            movlw   address
+            movf   address, W
             movwf   EEADR           ; Lower bits of Data Memory Address to read
             bcf     EECON1, EEPGD   ; Point to DATA memory
             bcf     EECON1, CFGS    ; Access EEPROM
             bsf     EECON1, RD      ; EEPROM Read
-            movf    EEDATA, W       ; W = EEDATA
-            movwf   register
+            movff   EEDATA, register       ; W = EEDATA
             endm
 
 eeprom_write macro address_high, address, ee_data
-            movlw   address_high
-            movwf   EEADRH          ; Upper bits of Data Memory Address to write
-            movlw   address
-            movwf   EEADR           ; Lower bits of Data Memory Address to write
-            movf    ee_data, W
-            movwf   EEDATA          ; Data Memory Value to write
+            movlf   address_high, EEADRH; Upper bits of Data Memory Address to write
+            movlf   address, EEADR    ; Lower bits of Data Memory Address to write
+            movff   ee_data, EEDATA ; Data Memory Value to write
+            btfsc   EECON1, WR
+            bra     $-2
             bcf     EECON1, EEPGD    ; Point to DATA memory
             bcf     EECON1, CFGS    ; Access EEPROM
             bsf     EECON1, WREN    ; Enable writes
             bcf     INTCON, GIE     ; Disable Interrupts
-            movlw   55h ;
+            bcf     PIR2, EEIF
+            movlw   0x55 ;
             movwf   EECON2   ; Write 55h
-            movlw   0AAh
+            movlw   0xAA
             movwf   EECON2            ; Write 0AAh
             bsf     EECON1, WR      ; Set WR bit to begin write
+            btfsc   EECON1, WR
+            bra     $-2
             bsf     INTCON, GIE     ; Enable Interrupts
             ; User code execution
             bcf     EECON1, WREN    ; Disable writes on write complete (EEIF set)
             endm
+
+eeprom_wr_reg   macro   address_high, address_reg, ee_data
+            movlf   address_high, EEADRH; Upper bits of Data Memory Address to write
+            movff   address_reg, EEADR    ; Lower bits of Data Memory Address to write
+            movff   ee_data, EEDATA ; Data Memory Value to write
+            btfsc   EECON1, WR
+            bra     $-2
+            bcf     EECON1, EEPGD    ; Point to DATA memory
+            bcf     EECON1, CFGS    ; Access EEPROM
+            bsf     EECON1, WREN    ; Enable writes
+            bcf     INTCON, GIE     ; Disable Interrupts
+            bcf     PIR2, EEIF
+            movlw   0x55 ;
+            movwf   EECON2   ; Write 55h
+            movlw   0xAA
+            movwf   EECON2            ; Write 0AAh
+            bsf     EECON1, WR      ; Set WR bit to begin write
+            btfsc   EECON1, WR
+            bra     $-2
+            bsf     INTCON, GIE     ; Enable Interrupts
+            ; User code execution
+            bcf     EECON1, WREN    ; Disable writes on write complete (EEIF set)
+            endm
+
 ; shift_logs- shift contents at location log1 into location log2
-;shift_logs  macro   log1, log2
-;            movlf   log1, curr_log_addr
-;            movlf   log2, new_log_addr
-;            call    ShiftLogLoop
-;            endm
+shift_logs  macro   log1, log2
+            movlf   log1, curr_log_addr
+            movlf   log2, new_log_addr
+            call    ShiftLogs
+            endm
 
 
 
@@ -374,6 +401,8 @@ Configure
 ;        bsf         INTCON2, INTEDG0
 
         call        ConfigureLCD                ; Initializes LCD, sets parameters as needed
+
+       
 ; ----------------------------------------------------------------------------
 ; Welcome - Initially shown on start up until user presses a button.
 WelcomeScreen
@@ -413,6 +442,8 @@ BeginOperation
         call        OperateMotorBackwards
         call        Delay500ms
         call        StoreLogs
+
+
         call        ClearLCD                    ; clear the LCD
         lcddisplay  OpComplete, first_line      ; Operation is done
         call        Delay1s
@@ -424,7 +455,6 @@ BeginOperation
 DisplayOperation
         call        ClearLCD                    ; clear the LCD
         lcddisplay  OpResults, first_line       ; displays "Results:"
-        call        Delay1s
         call        Delay1s
         call        Delay1s
         goto        DisplayLight1
@@ -552,28 +582,28 @@ LogLoop
 ; ----------------------------------------------------------------------------
 ChooseLogA
         call        ClearLCD
-        movlf       log_A, log_to_show
+        movlf       '0', log_to_show
         lcddisplay  LogMsgA, first_line
         call        Delay1s
         call        Delay1s
         bra         DisplayLogTime
 ChooseLogB
         call        ClearLCD
-        movlf       log_B, log_to_show
+        movlf       d'20', log_to_show
         lcddisplay  LogMsgB, first_line
         call        Delay1s
         call        Delay1s
         bra         DisplayLogTime
 ChooseLogC
         call        ClearLCD
-        movlf       log_C, log_to_show
+        movlf       d'40', log_to_show
         lcddisplay  LogMsgC, first_line
         call        Delay1s
         call        Delay1s
         bra         DisplayLogTime
 ChooseLogD
         call        ClearLCD
-        movlf       log_D, log_to_show
+        movlf       d'60', log_to_show
         lcddisplay  LogMsgD, first_line
         call        Delay1s
         call        Delay1s
@@ -609,7 +639,6 @@ LoadResults
         incf        log_to_show
         eeprom_read '0', log_to_show, light9
         call        Delay5ms
-        incf        log_to_show
         bra         DisplayLogLight1
 ; ----------------------------------------------------------------------------
 DisplayLogLight1
@@ -636,7 +665,7 @@ DisplayLogLight3
         lcddisplay  LogResultsMenu, second_line
 DisplayLogLight3Loop
         keygoto     key_1, LogMenu
-        keygoto     key_2, DisplayLogLight3
+        keygoto     key_2, DisplayLogLight4
         bra         DisplayLogLight3Loop
 ; ----------------------------------------------------------------------------
 DisplayLogLight4
@@ -722,52 +751,93 @@ EmergencyStop
 StoreLogs
 ;        shift_logs      log_C, log_D
 ;        shift_logs      log_B, log_C
-;        shift_logs      log_A, log_B
-        movlf           log_A, curr_log_addr
-        eeprom_write    '0', curr_log_addr, light1
-        incf            curr_log_addr
+        ;shift_logs      d'0', d'20' ; shift contents of log A to log B
+        ;movlf           '0', curr_log_addr
+        ;movlf           d'20', new_log_addr
+        
+        ;shift_logs      d'20', d'40'; shift log B to log C
+
+;        movlf           d'20', curr_log_addr
+;        movlf           d'40', new_log_addr
+;        call            ShiftLogs
+
+        ;try to shift one element from Log B to Log C
+        movlf           d'20', curr_log_addr
+        movlf           d'40', new_log_addr
+        eeprom_read     '0', curr_log_addr, temp_light
         call            Delay5ms
-        eeprom_write    '0', curr_log_addr, light2
-        incf            curr_log_addr
+        eeprom_wr_reg    '0', new_log_addr, temp_light
         call            Delay5ms
-        eeprom_write    '0', curr_log_addr, light3
-        incf            curr_log_addr
-        call            Delay5ms
-        eeprom_write    '0', curr_log_addr, light4
-        incf            curr_log_addr
-        call            Delay5ms
-        eeprom_write    '0', curr_log_addr, light5
-        incf            curr_log_addr
-        call            Delay5ms
-        eeprom_write    '0', curr_log_addr, light6
-        incf            curr_log_addr
-        call            Delay5ms
-        eeprom_write    '0', curr_log_addr, light7
-        incf            curr_log_addr
-        call            Delay5ms
-        eeprom_write    '0', curr_log_addr, light8
-        incf            curr_log_addr
-        call            Delay5ms
-        eeprom_write    '0', curr_log_addr, light9
-        incf            curr_log_addr
-        call            Delay5ms
+;        movlf           d'19', loop_count
+;ShiftLogBToCLoop
+;        incf            curr_log_addr
+;        incf            new_log_addr
+;        eeprom_read     '0', curr_log_addr, temp_light
+;        call            Delay5ms
+;        eeprom_wr_reg    '0', new_log_addr, temp_light
+;        call            Delay5ms
+;        dcfsnz          loop_count
+;        goto            EndShiftLogs
+;        bra             ShiftLogsLoop
+
+        shift_logs      '0', d'20' ; shift log A to log B
+        ;call            ShiftLogs
+        ; debugging
 
 
+        ; store most recent results in log A
+        movlf           '0', curr_log_addr
+        eeprom_wr_reg   '0', curr_log_addr, light1
+        incf            curr_log_addr
+        call            Delay5ms
+        eeprom_wr_reg   '0', curr_log_addr, light2
+        incf            curr_log_addr
+        call            Delay5ms
+        eeprom_wr_reg    '0', curr_log_addr, light3
+        incf            curr_log_addr
+        call            Delay5ms
+        eeprom_wr_reg    '0', curr_log_addr, light4
+        incf            curr_log_addr
+        call            Delay5ms
+        eeprom_wr_reg    '0', curr_log_addr, light5
+        incf            curr_log_addr
+        call            Delay5ms
+        eeprom_wr_reg    '0', curr_log_addr, light6
+        incf            curr_log_addr
+        call            Delay5ms
+        eeprom_wr_reg    '0', curr_log_addr, light7
+        incf            curr_log_addr
+        call            Delay5ms
+        eeprom_wr_reg    '0', curr_log_addr, light8
+        incf            curr_log_addr
+        call            Delay5ms
+        eeprom_wr_reg    '0', curr_log_addr, light9
+        incf            curr_log_addr
+        call            Delay5ms
+        return
 
-;ShiftLogs
-;        movlf   d'20', loop_count
-;ShiftLogsLoop
-;        eeprom_read '0', curr_log_addr, WREG
-;        call        Delay5ms
-;        eeprom_write '0', new_log_addr, WREG
-;        call        Delay5ms
-;        incf        curr_log_addr
-;        incf        new_log_addr
-;        dcfsnz      loop_count
-;        goto        EndShiftLogs
-;        bra         ShiftLogsLoop
-;EndShiftLogs
-;        return
+
+ShiftLogs
+        ; debugging
+        eeprom_read     '0', curr_log_addr, temp_light
+        call            Delay5ms
+        eeprom_wr_reg    '0', new_log_addr, temp_light
+        call            Delay5ms
+
+        movlf           d'19', loop_count
+ShiftLogsLoop
+        incf            curr_log_addr
+        incf            new_log_addr
+        eeprom_read     '0', curr_log_addr, temp_light
+        call            Delay5ms
+        eeprom_wr_reg    '0', new_log_addr, temp_light
+        call            Delay5ms
+        dcfsnz          loop_count
+        goto            EndShiftLogs
+        bra             ShiftLogsLoop
+
+EndShiftLogs
+        return
 
 ;; ----------------------------------------------------------------------------
 ;; I2C Subroutines
@@ -855,10 +925,10 @@ ClockSRs
         bsf         SR_CLOCK
         call        Delay5ms
         call        Delay5ms
-        call        Delay1s     ; for demonstrative purposes
+        ;call        Delay1s     ; for demonstrative purposes
         bcf         SR_CLOCK
         call        Delay44us
-        call        Delay1s     ; for demonstrative purposes
+        ;call        Delay1s     ; for demonstrative purposes
         return
 ; ----------------------------------------------------------------------------
 ; NoLightPresent: No light is present, return the binary output coded for
