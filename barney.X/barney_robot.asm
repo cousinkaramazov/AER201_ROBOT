@@ -354,7 +354,7 @@ DisplayLight2
 DisplayLight2Loop
         ; user presses 1- go to main menu, 2- go to next light
         keygoto     key_1, Menu
-        keygoto     key_2, EndDisplay
+        keygoto     key_2, DisplayLight3
         bra         DisplayLight2Loop
 ; ----------------------------------------------------------------------------
 DisplayLight3
@@ -364,7 +364,7 @@ DisplayLight3
 DisplayLight3Loop
         ; user presses 1- go to main menu, 2- go to next light
         keygoto     key_1, Menu
-        keygoto     key_2, EndDisplay
+        keygoto     key_2, DisplayLight4
         bra         DisplayLight3Loop
 ; ----------------------------------------------------------------------------
 DisplayLight4
@@ -374,7 +374,7 @@ DisplayLight4
 DisplayLight4Loop
         ; user presses 1- go to main menu, 2- go to next light
         keygoto     key_1, Menu
-        keygoto     key_2, EndDisplay
+        keygoto     key_2, DisplayLight5
         bra         DisplayLight4Loop
 ; ----------------------------------------------------------------------------
 DisplayLight5
@@ -384,58 +384,49 @@ DisplayLight5
 DisplayLight5Loop
         ; user presses 1- go to main menu, 2- go to next light
         keygoto     key_1, Menu
-        keygoto     key_2, EndDisplay
+        keygoto     key_2, DisplayLight6
         bra         DisplayLight5Loop
 ; ----------------------------------------------------------------------------
 DisplayLight6
         call        ClearLCD
-        displight   light2, Light2Msg           ; display results from light 2
+        displight   light6, Light6Msg           ; display results from light 6
         lcddisplay  ResultsMenu, second_line
-DisplayLight2Loop
+DisplayLight6Loop
         ; user presses 1- go to main menu, 2- go to next light
         keygoto     key_1, Menu
-        keygoto     key_2, EndDisplay
-        bra         DisplayLight2Loop
+        keygoto     key_2, DisplayLight7
+        bra         DisplayLight6Loop
 ; ----------------------------------------------------------------------------
-DisplayLight2
+DisplayLight7
         call        ClearLCD
-        displight   light2, Light2Msg           ; display results from light 2
+        displight   light7, Light7Msg           ; display results from light 7
         lcddisplay  ResultsMenu, second_line
-DisplayLight2Loop
+DisplayLight7Loop
         ; user presses 1- go to main menu, 2- go to next light
         keygoto     key_1, Menu
-        keygoto     key_2, EndDisplay
-        bra         DisplayLight2Loop
+        keygoto     key_2, DisplayLight8
+        bra         DisplayLight7Loop
 ; ----------------------------------------------------------------------------
-DisplayLight2
+DisplayLight8
         call        ClearLCD
-        displight   light2, Light2Msg           ; display results from light 2
+        displight   light8, Light8Msg           ; display results from light 8
         lcddisplay  ResultsMenu, second_line
-DisplayLight2Loop
+DisplayLight8Loop
         ; user presses 1- go to main menu, 2- go to next light
         keygoto     key_1, Menu
-        keygoto     key_2, EndDisplay
-        bra         DisplayLight2Loop
+        keygoto     key_2, DisplayLight9
+        bra         DisplayLight8Loop
 ; ----------------------------------------------------------------------------
-DisplayLight2
+DisplayLight9
         call        ClearLCD
-        displight   light2, Light2Msg           ; display results from light 2
+        displight   light9, Light9Msg           ; display results from light 9
         lcddisplay  ResultsMenu, second_line
-DisplayLight2Loop
+DisplayLight9Loop
         ; user presses 1- go to main menu, 2- go to next light
         keygoto     key_1, Menu
         keygoto     key_2, EndDisplay
-        bra         DisplayLight2Loop
-; ----------------------------------------------------------------------------
-DisplayLight2
-        call        ClearLCD
-        displight   light2, Light2Msg           ; display results from light 2
-        lcddisplay  ResultsMenu, second_line
-DisplayLight2Loop
-        ; user presses 1- go to main menu, 2- go to next light
-        keygoto     key_1, Menu
-        keygoto     key_2, EndDisplay
-        bra         DisplayLight2Loop
+        bra         DisplayLight9Loop
+
 ; ----------------------------------------------------------------------------
 EndDisplay
         ; Prompt user whether they want to display results again or go back
