@@ -29,8 +29,15 @@
 #define     second_line B'11000000'
 #define     LCD_RS      PORTD, 2
 #define     LCD_E       PORTD, 3
-#define     MOTOR_CCW   PORTC, 5
-#define     MOTOR_CW    PORTC, 6
+#define     MOTOR_CCW   PORTA, 0
+#define     MOTOR_CW    PORTA, 1
+#define     SR_CINHIBIT PORTC, 0
+#define     SR_LOAD     PORTC, 1
+#define     SR_CLOCK    PORTC, 2
+#define     SR_L1       PORTC, 3
+#define     SR_L2       PORTC, 4
+#define     SR_L3       PORTC, 5
+#define     SR_P        PORTC, 6
 
 #define     key_1       d'0'
 #define     key_2       d'1'
@@ -57,7 +64,10 @@
         delay1
         delay2
         delay3
-
+        ; Sensor registers
+        test_light
+        LED_count
+        light_result
         ; Light result registers
         current_light
         light1
@@ -167,6 +177,26 @@ displight       macro   register, table
             call    WriteLCDChar
             call    WriteLCDLightResults
             endm
+; ----------------------------------------------------------------------------
+; Sensor Arrays macros
+; ----------------------------------------------------------------------------
+; storeSR: Stores results from shift register into given light variable
+storeSR         macro   register
+            movff    PORTC, test_light
+            movf    test_light, w
+            andlw   b'01111000'     ; mask all bits but SR output
+            ; rotate until output bits are farthest right possible
+            rrncf   WREG, w
+            rrncf   WREG, w
+            rrncf   WREG, w
+            movwf   test_light       ; store processed output for later use
+            btfss   test_light, 3    ; if no light present...
+            call    NoLightPresent   ;...call subroutine to take care of this
+            btfsc   test_light, 3    ; if a light is present...
+            call    LightPresent     ; ...call subroutine to take care of this
+            movff   light_result, register
+            endm
+
 
 ; ============================================================================
 ; Vectors
@@ -238,16 +268,20 @@ Configure
         clrf        PORTC
         clrf        PORTD
         clrf        PORTE
+        ; TODO: configure PORTA for motor, RTC, emergency stop switch
+        ; Motor- RA<1:0>
+        movlw       b'11111100'
+        movwf       TRISA
         ; configure PORTB for keypad
         movlw       b'11110010'
         movwf       TRISB
-        ; TODO: configure PORTC for motor, RTC, emergency stop switch
-        ; Motor- RC<6:5>
-        movlw       b'10011111'
-
-
-
-        call        ConfigureLCD                ; Initializes LCD, sets parameters needed
+        ; configure PORTC for shift registers
+        ; Output-RC<6:3>, Clock-RC2, Parallel load-RC1, ClockInhibitor-RC0
+        movlw       b'11111000'
+        movwf       TRISC
+        bsf         SR_CINHIBIT
+        bsf         SR_LOAD
+        call        ConfigureLCD                ; Initializes LCD, sets parameters as needed
 ; ----------------------------------------------------------------------------
 ; Welcome - Initially shown on start up until user presses a button.
 WelcomeScreen
@@ -281,11 +315,11 @@ BeginOperation
         ; actual operation stuff goes on here
         call        OperateMotorForwards
         call        Delay500ms
-        ;call        ReadSensorInput
+        call        ReadSensorInput
         call        Delay500ms
         call        OperateMotorBackwards
-        movlf       b'1', light1
-        movlf       b'10', light2
+        ;movlf       b'1', light1
+        ;movlf       b'10', light2
         call        Delay500ms
         call        ClearLCD                    ; clear the LCD
         lcddisplay  OpComplete, first_line      ; Operation is done
@@ -312,6 +346,86 @@ DisplayLight1Loop
         keygoto     key_1, Menu
         keygoto     key_2, DisplayLight2
         bra         DisplayLight1Loop
+; ----------------------------------------------------------------------------
+DisplayLight2
+        call        ClearLCD
+        displight   light2, Light2Msg           ; display results from light 2
+        lcddisplay  ResultsMenu, second_line
+DisplayLight2Loop
+        ; user presses 1- go to main menu, 2- go to next light
+        keygoto     key_1, Menu
+        keygoto     key_2, EndDisplay
+        bra         DisplayLight2Loop
+; ----------------------------------------------------------------------------
+DisplayLight3
+        call        ClearLCD
+        displight   light3, Light3Msg           ; display results from light 3
+        lcddisplay  ResultsMenu, second_line
+DisplayLight3Loop
+        ; user presses 1- go to main menu, 2- go to next light
+        keygoto     key_1, Menu
+        keygoto     key_2, EndDisplay
+        bra         DisplayLight3Loop
+; ----------------------------------------------------------------------------
+DisplayLight4
+        call        ClearLCD
+        displight   light4, Light4Msg           ; display results from light 4
+        lcddisplay  ResultsMenu, second_line
+DisplayLight4Loop
+        ; user presses 1- go to main menu, 2- go to next light
+        keygoto     key_1, Menu
+        keygoto     key_2, EndDisplay
+        bra         DisplayLight4Loop
+; ----------------------------------------------------------------------------
+DisplayLight5
+        call        ClearLCD
+        displight   light5, Light5Msg           ; display results from light 5
+        lcddisplay  ResultsMenu, second_line
+DisplayLight5Loop
+        ; user presses 1- go to main menu, 2- go to next light
+        keygoto     key_1, Menu
+        keygoto     key_2, EndDisplay
+        bra         DisplayLight5Loop
+; ----------------------------------------------------------------------------
+DisplayLight6
+        call        ClearLCD
+        displight   light2, Light2Msg           ; display results from light 2
+        lcddisplay  ResultsMenu, second_line
+DisplayLight2Loop
+        ; user presses 1- go to main menu, 2- go to next light
+        keygoto     key_1, Menu
+        keygoto     key_2, EndDisplay
+        bra         DisplayLight2Loop
+; ----------------------------------------------------------------------------
+DisplayLight2
+        call        ClearLCD
+        displight   light2, Light2Msg           ; display results from light 2
+        lcddisplay  ResultsMenu, second_line
+DisplayLight2Loop
+        ; user presses 1- go to main menu, 2- go to next light
+        keygoto     key_1, Menu
+        keygoto     key_2, EndDisplay
+        bra         DisplayLight2Loop
+; ----------------------------------------------------------------------------
+DisplayLight2
+        call        ClearLCD
+        displight   light2, Light2Msg           ; display results from light 2
+        lcddisplay  ResultsMenu, second_line
+DisplayLight2Loop
+        ; user presses 1- go to main menu, 2- go to next light
+        keygoto     key_1, Menu
+        keygoto     key_2, EndDisplay
+        bra         DisplayLight2Loop
+; ----------------------------------------------------------------------------
+DisplayLight2
+        call        ClearLCD
+        displight   light2, Light2Msg           ; display results from light 2
+        lcddisplay  ResultsMenu, second_line
+DisplayLight2Loop
+        ; user presses 1- go to main menu, 2- go to next light
+        keygoto     key_1, Menu
+        keygoto     key_2, EndDisplay
+        bra         DisplayLight2Loop
 ; ----------------------------------------------------------------------------
 DisplayLight2
         call        ClearLCD
@@ -373,12 +487,104 @@ OperateMotorForwards
 ; OUTPUT: None
 ; ----------------------------------------------------------------------------
 OperateMotorBackwards
-        bcf         MOTOR_CCW
-        bsf         MOTOR_CW
-        call        MotorDelay
-        bcf         MOTOR_CW
+        bcf         MOTOR_CCW       ; clear previous counterclockwise signal
+        bsf         MOTOR_CW        ; send high signal to CW circuit
+        call        MotorDelay      ; delay so motor can turn
+        bcf         MOTOR_CW        ; clear signal to CW circuit
         return
 
+; ----------------------------------------------------------------------------
+; Sensor Subroutines
+; ----------------------------------------------------------------------------
+; ReadSensorInput: Read in data from sensors, stored in shift registers
+; INPUT: None
+; OUTPUT: light1, light2, light3, light4, light5, light6, light7, light8, light9
+; ----------------------------------------------------------------------------
+ReadSensorInput
+        bsf         SR_CINHIBIT ; enable clock inhibit
+        call        Delay1s     ; for demonstration purposes
+        ;pulse load signal
+        bcf         SR_LOAD
+        call        Delay5ms
+        call        Delay5ms
+        call        Delay1s
+        call        Delay5ms
+        bsf         SR_LOAD
+        bcf         SR_CINHIBIT ; disable clock inhibit
+        ; send posedges until all lights read
+        call        Delay1s
+        call        ClockSRs
+        storeSR     light1
+        call        ClockSRs
+        storeSR     light2
+        call        ClockSRs
+        storeSR     light3
+        call        ClockSRs
+        storeSR     light4
+        call        ClockSRs
+        storeSR     light5
+        call        ClockSRs
+        storeSR     light6
+        call        ClockSRs
+        storeSR     light7
+        call        ClockSRs
+        storeSR     light8
+        call        ClockSRs
+        storeSR     light9
+        bsf         SR_CINHIBIT ; enable clock inhibit
+        return
+; ----------------------------------------------------------------------------
+; ClockSRs: Send a posedge to the shift registers' clock signals
+; INPUT: None
+; OUTPUT: None
+; ----------------------------------------------------------------------------
+ClockSRs
+        bsf         SR_CLOCK
+        call        Delay5ms
+        call        Delay5ms
+        call        Delay1s     ; for demonstrative purposes
+        bcf         SR_CLOCK
+        call        Delay44us
+        call        Delay1s     ; for demonstrative purposes
+        return
+; ----------------------------------------------------------------------------
+; NoLightPresent: No light is present, return the binary output coded for
+; no LED
+; INPUT: None
+; OUTPUT: light_result
+; ----------------------------------------------------------------------------
+NoLightPresent
+        movlf       b'10000000', light_result
+        return
+; ----------------------------------------------------------------------------
+; LightPresent: Light is present, return number of functional LEDs
+; INPUT: test_light
+; OUTPUT: light_result
+; ----------------------------------------------------------------------------
+LightPresent
+        movlf       b'0', LED_count         ; reset number of functional LEDs detected
+        ; add 1 to LED_count for each LED sensed
+        btfsc       test_light, 0
+        call        AddLEDCount
+        btfsc       test_light, 1
+        call        AddLEDCount
+        btfsc       test_light, 2
+        call        AddLEDCount
+
+        movff       LED_count, light_result   ; move number of lights counted to light_result
+        return
+
+; ----------------------------------------------------------------------------
+; AddLEDCount: Functional LED has been detected, increment count
+; INPUT: None
+; OUTPUT: LED_count
+; ----------------------------------------------------------------------------
+AddLEDCount
+        ; increment LED_count
+        movf        LED_count, W
+        addlw       b'1'
+        movwf       LED_count
+        return
 ; ----------------------------------------------------------------------------
 ; LCD Subroutines
 ; ----------------------------------------------------------------------------
@@ -501,7 +707,6 @@ ZeroWorking
         ; write character data to LCD
         call    WriteLCDChar
         goto    EndWriteLCDLightResults
-
 NotPresent
        ; move full address of table into Table Pointer
         movlw   upper not_present
