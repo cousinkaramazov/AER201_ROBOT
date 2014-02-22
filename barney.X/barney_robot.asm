@@ -29,15 +29,15 @@
 #define     second_line B'11000000'
 #define     LCD_RS      PORTD, 2
 #define     LCD_E       PORTD, 3
-#define     MOTOR_CCW   PORTA, 0
-#define     MOTOR_CW    PORTA, 1
-#define     SR_CINHIBIT PORTC, 0
-#define     SR_LOAD     PORTC, 1
-#define     SR_CLOCK    PORTC, 2
-#define     SR_L1       PORTC, 3
-#define     SR_L2       PORTC, 4
-#define     SR_L3       PORTC, 5
-#define     SR_P        PORTC, 6
+#define     MOTOR_CCW   PORTD, 0
+#define     MOTOR_CW    PORTD, 1
+#define     SR_CINHIBIT PORTE, 0
+#define     SR_LOAD     PORTC, 7
+#define     SR_CLOCK    PORTE, 1
+#define     SR_L1       PORTC, 0
+#define     SR_L2       PORTC, 1
+#define     SR_L3       PORTC, 2
+#define     SR_P        PORTC, 5
 
 #define     key_1       d'0'
 #define     key_2       d'1'
@@ -55,6 +55,11 @@
 #define     key_0       d'13'
 #define     key_pound   d'14'
 #define     key_D       d'15'
+
+#define     log_A       d'0'
+#define     log_B       d'20'
+#define     log_C       d'40'
+#define     log_D       d'60'
 ; ============================================================================
 ; General Purpose Registers (using Access Bank)
 ; ============================================================================
@@ -79,6 +84,12 @@
         light7
         light8
         light9
+        ; Log variables
+        curr_log_addr
+        new_log_addr
+        loop_count
+        log_light1
+        log_light2
 
         ; Keypad registers
         keypad_data
@@ -112,6 +123,53 @@ beq         macro   literal, register, label
             infsnz  WREG
             goto    label
             endm
+
+
+; ----------------------------------------------------------------------------
+; EEPROM macros
+; ----------------------------------------------------------------------------
+eeprom_read macro   address_high, address, register
+            movlw   address_high
+            movwf   EEADRH          ; Upper bits of Data Memory Address to read
+            movlw   address
+            movwf   EEADR           ; Lower bits of Data Memory Address to read
+            bcf     EECON1, EEPGD   ; Point to DATA memory
+            bcf     EECON1, CFGS    ; Access EEPROM
+            bsf     EECON1, RD      ; EEPROM Read
+            movf    EEDATA, W       ; W = EEDATA
+            movwf   register
+            endm
+
+eeprom_write macro address_high, address, ee_data
+            movlw   address_high
+            movwf   EEADRH          ; Upper bits of Data Memory Address to write
+            movlw   address
+            movwf   EEADR           ; Lower bits of Data Memory Address to write
+            movf    ee_data, W
+            movwf   EEDATA          ; Data Memory Value to write
+            bcf     EECON1, EEPGD    ; Point to DATA memory
+            bcf     EECON1, CFGS    ; Access EEPROM
+            bsf     EECON1, WREN    ; Enable writes
+            bcf     INTCON, GIE     ; Disable Interrupts
+            movlw   55h ;
+            movwf   EECON2   ; Write 55h
+            movlw   0AAh
+            movwf   EECON2            ; Write 0AAh
+            bsf     EECON1, WR      ; Set WR bit to begin write
+            bsf     INTCON, GIE     ; Enable Interrupts
+            ; User code execution
+            bcf     EECON1, WREN    ; Disable writes on write complete (EEIF set)
+            endm
+; shift_logs- shift contents at location log1 into location log2
+;shift_logs  macro   log1, log2
+;            movlf   log1, curr_log_addr
+;            movlf   log2, new_log_addr
+;            call    ShiftLogLoop
+;            endm
+
+
+
+
 ; ----------------------------------------------------------------------------
 ; Keypad macros
 ; ----------------------------------------------------------------------------
@@ -182,32 +240,47 @@ displight       macro   register, table
 ; ----------------------------------------------------------------------------
 ; storeSR: Stores results from shift register into given light variable
 storeSR         macro   register
-            movff    PORTC, test_light
+            movff   PORTC, test_light
             movf    test_light, w
-            andlw   b'01111000'     ; mask all bits but SR output
-            ; rotate until output bits are farthest right possible
-            rrncf   WREG, w
-            rrncf   WREG, w
-            rrncf   WREG, w
+            andlw   b'00100111'     ; mask all bits but SR output
+;            ; rotate until output bits are farthest right possible
+;            rrncf   WREG, w
+;            rrncf   WREG, w
+;            rrncf   WREG, w
             movwf   test_light       ; store processed output for later use
-            btfss   test_light, 3    ; if no light present...
+            btfss   test_light, 5    ; if no light present...
             call    NoLightPresent   ;...call subroutine to take care of this
-            btfsc   test_light, 3    ; if a light is present...
+            btfsc   test_light, 5    ; if a light is present...
             call    LightPresent     ; ...call subroutine to take care of this
             movff   light_result, register
             endm
+; ----------------------------------------------------------------------------
+; I2C macros - code inspired by sample code provided
+; ----------------------------------------------------------------------------
+i2c_start       macro
+            bsf     SSPCON2, SEN
+            call    I2CCheck
+            endm
 
+i2c_stop        macro
+            bsf     SSPCON2, PEN
+            call    I2CCheck
+            endm
 
+i2c_write       macro
+            movwf   SSPBUF
+            call    I2CCheck
+            endm
 ; ============================================================================
 ; Vectors
 ; ============================================================================
         org         0x00        ; Reset vector
         goto        Main
 
-        org         0x08        ; Low priority interrupt vector
-        retfie
+        org         0x08        ; High priority interrupt vector - only used for E-stop
+        goto        EmergencyStop
 
-        org         0x12        ; High priority interrupt vector
+        org         0x18        ; low priority interrupt vector
         retfie
 ; ============================================================================
 ; Tables
@@ -219,7 +292,7 @@ MenuMsg1                db      "Main Menu", 0
 MenuMsg2                db      "1:Begin, 2:Logs", 0
 OpMsg                   db      "Working...", 0
 OpComplete              db      "Test complete", 0
-LogMsg1                 db      "Logs here", 0
+LogMsg1                 db      "View which log?", 0
 LogMsg2                 db      "1: Main Menu", 0
 
 OpResults               db      "Results:", 0
@@ -246,8 +319,6 @@ AllResultsShown         db      "All lights shown", 0
 ResultsDone1            db      "1:Main Menu", 0
 ResultsDone2            db      "2:Show again", 0
 
-
-
 ; ============================================================================
 ; Main program
 ; ============================================================================
@@ -268,19 +339,31 @@ Configure
         clrf        PORTC
         clrf        PORTD
         clrf        PORTE
-        ; TODO: configure PORTA for motor, RTC, emergency stop switch
-        ; Motor- RA<1:0>
-        movlw       b'11111100'
+        ; configure PORTA for input from shift register
+        ; SR input-<3:0>
+        movlw       b'00000000'
         movwf       TRISA
-        ; configure PORTB for keypad
-        movlw       b'11110010'
+        movlw       07h
+        movwf       ADCON1
+        ; configure PORTB for keypad, emergency stop
+        movlw       b'11110011'
         movwf       TRISB
-        ; configure PORTC for shift registers
-        ; Output-RC<6:3>, Clock-RC2, Parallel load-RC1, ClockInhibitor-RC0
-        movlw       b'11111000'
+        ; configure PORTC for motor signals, RTC, output to shift register
+        ; SR output-<7:5>, RTC-<4:3>, Motor signals-<1:0>
+        movlw       b'00111111'
         movwf       TRISC
-        bsf         SR_CINHIBIT
         bsf         SR_LOAD
+        bsf         SR_CINHIBIT
+        call        Delay1s
+        
+        call        Delay1s
+        ; configure interrupts
+;        clrf        INTCON
+;        bsf         RCON, IPEN          ;enable interrupt priority
+;        bsf         INTCON, GIE        ;enable high priority interrupts
+;        bsf         INTCON, INT0IE        ;enable low priority interrupts
+;        bsf         INTCON2, INTEDG0
+
         call        ConfigureLCD                ; Initializes LCD, sets parameters as needed
 ; ----------------------------------------------------------------------------
 ; Welcome - Initially shown on start up until user presses a button.
@@ -305,7 +388,7 @@ Menu
 MenuLoop
         ; Wait until user has pressed 1 to begin or 2 for logs.
         keygoto     key_1, BeginOperation
-        keygoto     key_2, Logs
+        keygoto     key_2, LogMenu
         bra         MenuLoop
 ; ----------------------------------------------------------------------------
 ; Begin Operation- TODO: Manages all motors and sensors needed to test LCD.
@@ -316,11 +399,11 @@ BeginOperation
         call        OperateMotorForwards
         call        Delay500ms
         call        ReadSensorInput
+        ;call        StoreSensorInput
         call        Delay500ms
         call        OperateMotorBackwards
-        ;movlf       b'1', light1
-        ;movlf       b'10', light2
         call        Delay500ms
+        call        StoreLogs
         call        ClearLCD                    ; clear the LCD
         lcddisplay  OpComplete, first_line      ; Operation is done
         call        Delay1s
@@ -446,17 +529,94 @@ EndDisplayLoop
 ; ----------------------------------------------------------------------------
 ; Logs- TODO: will eventually contain code showing user results of previous
 ; operations.
-Logs
+LogMenu
         call        ClearLCD
         lcddisplay  LogMsg1, first_line
         lcddisplay  LogMsg2, second_line
 LogLoop
         keygoto     key_1, Menu
+        keygoto     key_A, setLogA
+        keygoto     key_B, setLogB
+        keygoto     key_C, setLogC
+        keygoto     key_D, setLogD
+
         bra         LogLoop
+
+; ============================================================================
+; Emergency Stop Routine
+; ============================================================================
+EmergencyStop
+
+
 
 ; ============================================================================
 ; Subroutines
 ; ============================================================================
+; ----------------------------------------------------------------------------
+; Log Subroutines
+; ----------------------------------------------------------------------------
+StoreLogs
+;        shift_logs      log_C, log_D
+;        shift_logs      log_B, log_C
+;        shift_logs      log_A, log_B
+        movlf           log_A, curr_log_addr
+        eeprom_write    '0', curr_log_addr, light1
+        incf            curr_log_addr
+        call            Delay5ms
+        eeprom_write    '0', curr_log_addr, light2
+        incf            curr_log_addr
+        call            Delay5ms
+        eeprom_write    '0', curr_log_addr, light3
+        incf            curr_log_addr
+        call            Delay5ms
+        eeprom_write    '0', curr_log_addr, light4
+        incf            curr_log_addr
+        call            Delay5ms
+        eeprom_write    '0', curr_log_addr, light5
+        incf            curr_log_addr
+        call            Delay5ms
+        eeprom_write    '0', curr_log_addr, light6
+        incf            curr_log_addr
+        call            Delay5ms
+        eeprom_write    '0', curr_log_addr, light7
+        incf            curr_log_addr
+        call            Delay5ms
+        eeprom_write    '0', curr_log_addr, light8
+        incf            curr_log_addr
+        call            Delay5ms
+        eeprom_write    '0', curr_log_addr, light9
+        incf            curr_log_addr
+        call            Delay5ms
+
+
+
+;ShiftLogs
+;        movlf   d'20', loop_count
+;ShiftLogsLoop
+;        eeprom_read '0', curr_log_addr, WREG
+;        call        Delay5ms
+;        eeprom_write '0', new_log_addr, WREG
+;        call        Delay5ms
+;        incf        curr_log_addr
+;        incf        new_log_addr
+;        dcfsnz      loop_count
+;        goto        EndShiftLogs
+;        bra         ShiftLogsLoop
+;EndShiftLogs
+;        return
+
+;; ----------------------------------------------------------------------------
+;; I2C Subroutines
+;; ----------------------------------------------------------------------------
+;CheckI2C
+;        btfss       PIR1, SSPIF   ; set whenever complete byte transferred
+;        goto        CheckI2CLoop
+;        goto        EndCheckI2C
+;EndCheckI2C
+;        bcf         PIR1, SSPIF
+;        return
+
+
 ; ----------------------------------------------------------------------------
 ; Motor Subroutines
 ; ----------------------------------------------------------------------------
@@ -853,11 +1013,6 @@ MotorDelay
         ;call        Delay1s
 EndDelayMotor
         return
+
+
     end
-
-
-
-
-
-
-
