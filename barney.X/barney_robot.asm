@@ -435,8 +435,6 @@ EndDisplay
         lcddisplay  AllResultsShown, first_line
         call        Delay1s
         call        Delay1s
-        call        Delay1s
-        call        Delay1s
         call        ClearLCD
         lcddisplay  ResultsDone1, first_line
         lcddisplay  ResultsDone2, second_line
