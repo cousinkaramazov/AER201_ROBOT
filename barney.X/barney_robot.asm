@@ -98,6 +98,15 @@
         keypad_data
         keypad_result
         keypad_test
+
+        ; E-stop registers
+        e_stop_poll
+        curr_display_1u
+        curr_display_1h
+        curr_display_1l
+        curr_display_2u
+        curr_display_2h
+        curr_display_2l
     endc
 
 
@@ -195,7 +204,41 @@ shift_logs  macro   log1, log2
             call    ShiftLogs
             endm
 
+; ----------------------------------------------------------------------------
+; E-stop macros
+; ----------------------------------------------------------------------------
+store_disp1     macro   table
+                movlf   upper table, curr_display_1u
+                movlf   high table, curr_display_1h
+                movlf   low table, curr_display_1l
+                endm
 
+store_disp2     macro   table
+                movlf   upper table, curr_display_2u
+                movlf   high table, curr_display_2h
+                movlf   low table, curr_display_2l
+                endm
+
+redisp          macro
+                movlw   first_line
+                writelcdinst
+                movf    curr_display_1u, W
+                movwf   TBLPTRU
+                movf    curr_display_1h, W
+                movwf   TBLPTRH
+                movf    curr_display_1l, W
+                movwf   TBLPTRL
+                call    WriteLCDChar
+                movlw   second_line
+                writelcdinst
+                movf    curr_display_2u, W
+                movwf   TBLPTRU
+                movf    curr_display_2h, W
+                movwf   TBLPTRH
+                movf    curr_display_2l, W
+                movwf   TBLPTRL
+                call    WriteLCDChar
+                endm
 
 
 ; ----------------------------------------------------------------------------
@@ -313,6 +356,7 @@ i2c_write       macro
 ; ============================================================================
 ; Tables
 ; ============================================================================
+BlankLine               db      "", 0
 
 WelcomeMsg              db      "Welcome User!", 0
 WelcomeMsg2             db      "Press any button", 0
@@ -355,6 +399,13 @@ ResultsDone2            db      "2:Show again", 0
 LogResultsMenu          db      "1:Logs, 2:Next",0
 LogResultsDone1         db      "1:Log Menu", 0
 
+EStopFlash1             db      "Emergency stop", 0
+EStopFlash2             db      "Activated!", 0
+EStopActive1            db      "Deactivate stop", 0
+EStopActive2            db      "when ready.", 0
+EStopResume1            db      "Resuming...", 0
+
+
 ; ============================================================================
 ; Main program
 ; ============================================================================
@@ -394,11 +445,11 @@ Configure
         
         call        Delay1s
         ; configure interrupts
-;        clrf        INTCON
-;        bsf         RCON, IPEN          ;enable interrupt priority
-;        bsf         INTCON, GIE        ;enable high priority interrupts
-;        bsf         INTCON, INT0IE        ;enable low priority interrupts
-;        bsf         INTCON2, INTEDG0
+        clrf        INTCON
+        bcf         RCON, IPEN              ; disable interrupt priority
+        bsf         INTCON, GIE             ; enable interrupts
+        bsf         INTCON, INT0IE          ; RB0 is interrupt
+        bcf         INTCON2, INTEDG0        ; falling edge trigger
 
         call        ConfigureLCD                ; Initializes LCD, sets parameters as needed
 
@@ -409,8 +460,9 @@ WelcomeScreen
         call        ClearLCD
         ;display first and secondlines of welcome message
         lcddisplay  WelcomeMsg, first_line
+        store_disp1 WelcomeMsg
         lcddisplay  WelcomeMsg2, second_line
-
+        store_disp2 WelcomeMsg2
 WelcomeLoop
         call        CheckAnyButton
         beq         d'1', keypad_result, Menu   ; if key has not been pressed
@@ -422,7 +474,9 @@ Menu
         call        ClearLCD                    ;Clears LCD Screen
         ; Display menu message
         lcddisplay  MenuMsg1, first_line
+        store_disp1 MenuMsg1
         lcddisplay  MenuMsg2, second_line
+        store_disp2 MenuMsg2
 MenuLoop
         ; Wait until user has pressed 1 to begin or 2 for logs.
         keygoto     key_1, BeginOperation
@@ -433,6 +487,8 @@ MenuLoop
 BeginOperation
         call        ClearLCD
         lcddisplay  OpMsg, first_line
+        store_disp1 OpMsg
+        store_disp2 BlankLine
         ; actual operation stuff goes on here
         call        OperateMotorForwards
         call        Delay500ms
@@ -446,15 +502,23 @@ BeginOperation
 
         call        ClearLCD                    ; clear the LCD
         lcddisplay  OpComplete, first_line      ; Operation is done
+        store_disp1 OpComplete
+        store_disp2 BlankLine
         call        Delay1s
         ;call        Delay1s
         goto        DisplayOperation
+
+
+
 ; ----------------------------------------------------------------------------
 ; Display Operation - Tells user results are about to be shown.  Then displays
 ; each individual light's results.
+; ----------------------------------------------------------------------------
 DisplayOperation
         call        ClearLCD                    ; clear the LCD
         lcddisplay  OpResults, first_line       ; displays "Results:"
+        store_disp1 OpResults
+        store_disp2 BlankLine
         call        Delay1s
         call        Delay1s
         goto        DisplayLight1
@@ -565,9 +629,12 @@ EndDisplayLoop
         keygoto     key_1, Menu
         keygoto     key_2, DisplayLight1
         bra         EndDisplayLoop
+
+
 ; ----------------------------------------------------------------------------
 ; Logs- TODO: will eventually contain code showing user results of previous
 ; operations.
+; ----------------------------------------------------------------------------
 LogMenu
         call        ClearLCD
         lcddisplay  LogMsg1, first_line
@@ -739,7 +806,36 @@ EndLogResultsLoop
 ; Emergency Stop Routine
 ; ============================================================================
 EmergencyStop
+        bcf         INTCON, INT0IF      ; clear flag used for E Stop
+        call        ClearLCD
+        lcddisplay  EStopFlash1, first_line
+        lcddisplay  EStopFlash2, second_line
+        call        Delay1s
+        call        Delay1s
+        call        ClearLCD
+        lcddisplay  EStopActive1, first_line
+        lcddisplay  EStopActive2, second_line
+        call        PollEStop
+        retfie
 
+PollEStop
+        bcf         INTCON, GIE         ; disable interrupts
+PollEStopLoop
+        movff       PORTB, e_stop_poll
+        btfsc       e_stop_poll, 0      ; keep looping while signal is low
+        goto        EndPollEStopLoop    ; otherwise stop polling
+        bra         PollEStopLoop
+EndPollEStopLoop
+        bsf         INTCON, GIE
+        call        ClearLCD
+        lcddisplay  EStopResume1, first_line
+        call        Delay1s
+        redisp
+        return
+
+        ; check 0th bit of Port B in a loop until it returns high
+        ; display "Resuming..."
+        ; once done, reenable interrupts with bsf Intcon, GIE
 
 
 ; ============================================================================
@@ -761,9 +857,57 @@ StoreLogs
 ;        movlf           d'40', new_log_addr
 ;        call            ShiftLogs
 
-        ;try to shift one element from Log B to Log C
+        ;try to shift one element at a time from Log B to Log C
         movlf           d'20', curr_log_addr
         movlf           d'40', new_log_addr
+        eeprom_read     '0', curr_log_addr, temp_light
+        call            Delay5ms
+        eeprom_wr_reg    '0', new_log_addr, temp_light
+        call            Delay5ms
+        incf            curr_log_addr
+        incf            new_log_addr
+        eeprom_read     '0', curr_log_addr, temp_light
+        call            Delay5ms
+        eeprom_wr_reg    '0', new_log_addr, temp_light
+        call            Delay5ms
+        incf            curr_log_addr
+        incf            new_log_addr
+        eeprom_read     '0', curr_log_addr, temp_light
+        call            Delay5ms
+        eeprom_wr_reg    '0', new_log_addr, temp_light
+        call            Delay5ms
+        incf            curr_log_addr
+        incf            new_log_addr
+        eeprom_read     '0', curr_log_addr, temp_light
+        call            Delay5ms
+        eeprom_wr_reg    '0', new_log_addr, temp_light
+        call            Delay5ms
+        incf            curr_log_addr
+        incf            new_log_addr
+        eeprom_read     '0', curr_log_addr, temp_light
+        call            Delay5ms
+        eeprom_wr_reg    '0', new_log_addr, temp_light
+        call            Delay5ms
+        incf            curr_log_addr
+        incf            new_log_addr
+        eeprom_read     '0', curr_log_addr, temp_light
+        call            Delay5ms
+        eeprom_wr_reg    '0', new_log_addr, temp_light
+        call            Delay5ms
+        incf            curr_log_addr
+        incf            new_log_addr
+        eeprom_read     '0', curr_log_addr, temp_light
+        call            Delay5ms
+        eeprom_wr_reg    '0', new_log_addr, temp_light
+        call            Delay5ms
+        incf            curr_log_addr
+        incf            new_log_addr
+        eeprom_read     '0', curr_log_addr, temp_light
+        call            Delay5ms
+        eeprom_wr_reg    '0', new_log_addr, temp_light
+        call            Delay5ms
+        incf            curr_log_addr
+        incf            new_log_addr
         eeprom_read     '0', curr_log_addr, temp_light
         call            Delay5ms
         eeprom_wr_reg    '0', new_log_addr, temp_light
