@@ -90,6 +90,7 @@
         loop_count
         log_light1
         log_light2
+        log_to_show
 
         ; Keypad registers
         keypad_data
@@ -307,6 +308,11 @@ Light7Msg               db      "Light 7: ", 0
 Light8Msg               db      "Light 8: ", 0
 Light9Msg               db      "Light 9: ", 0
 
+LogMsgA                 db      "Log A:", 0
+LogMsgB                 db      "Log B:", 0
+LogMsgC                 db      "Log C:", 0
+LogMsgD                 db      "Log D:", 0
+
 working_3               db      "3 LEDs", 0
 working_2               db      "2 LEDs", 0
 working_1               db      "1 LED", 0
@@ -318,6 +324,9 @@ ResultsMenu             db      "1:Menu, 2:Next", 0
 AllResultsShown         db      "All lights shown", 0
 ResultsDone1            db      "1:Main Menu", 0
 ResultsDone2            db      "2:Show again", 0
+
+LogResultsMenu          db      "1:Logs, 2:Next",0
+LogResultsDone1         db      "1:Log Menu", 0
 
 ; ============================================================================
 ; Main program
@@ -535,12 +544,167 @@ LogMenu
         lcddisplay  LogMsg2, second_line
 LogLoop
         keygoto     key_1, Menu
-        keygoto     key_A, setLogA
-        keygoto     key_B, setLogB
-        keygoto     key_C, setLogC
-        keygoto     key_D, setLogD
-
+        keygoto     key_A, ChooseLogA
+        keygoto     key_B, ChooseLogB
+        keygoto     key_C, ChooseLogC
+        keygoto     key_D, ChooseLogD
         bra         LogLoop
+; ----------------------------------------------------------------------------
+ChooseLogA
+        call        ClearLCD
+        movlf       log_A, log_to_show
+        lcddisplay  LogMsgA, first_line
+        call        Delay1s
+        call        Delay1s
+        bra         DisplayLogTime
+ChooseLogB
+        call        ClearLCD
+        movlf       log_B, log_to_show
+        lcddisplay  LogMsgB, first_line
+        call        Delay1s
+        call        Delay1s
+        bra         DisplayLogTime
+ChooseLogC
+        call        ClearLCD
+        movlf       log_C, log_to_show
+        lcddisplay  LogMsgC, first_line
+        call        Delay1s
+        call        Delay1s
+        bra         DisplayLogTime
+ChooseLogD
+        call        ClearLCD
+        movlf       log_D, log_to_show
+        lcddisplay  LogMsgD, first_line
+        call        Delay1s
+        call        Delay1s
+        bra         DisplayLogTime
+; ----------------------------------------------------------------------------
+DisplayLogTime
+        bra         LoadResults
+; ----------------------------------------------------------------------------
+LoadResults
+        eeprom_read '0', log_to_show, light1
+        call        Delay5ms
+        incf        log_to_show
+        eeprom_read '0', log_to_show, light2
+        call        Delay5ms
+        incf        log_to_show
+        eeprom_read '0', log_to_show, light3
+        call        Delay5ms
+        incf        log_to_show
+        eeprom_read '0', log_to_show, light4
+        call        Delay5ms
+        incf        log_to_show
+        eeprom_read '0', log_to_show, light5
+        call        Delay5ms
+        incf        log_to_show
+        eeprom_read '0', log_to_show, light6
+        call        Delay5ms
+        incf        log_to_show
+        eeprom_read '0', log_to_show, light7
+        call        Delay5ms
+        incf        log_to_show
+        eeprom_read '0', log_to_show, light8
+        call        Delay5ms
+        incf        log_to_show
+        eeprom_read '0', log_to_show, light9
+        call        Delay5ms
+        incf        log_to_show
+        bra         DisplayLogLight1
+; ----------------------------------------------------------------------------
+DisplayLogLight1
+        call        ClearLCD
+        displight   light1, Light1Msg
+        lcddisplay  LogResultsMenu, second_line
+DisplayLogLight1Loop
+        keygoto     key_1, LogMenu
+        keygoto     key_2, DisplayLogLight2
+        bra         DisplayLogLight1Loop
+; ----------------------------------------------------------------------------
+DisplayLogLight2
+        call        ClearLCD
+        displight   light2, Light2Msg
+        lcddisplay  LogResultsMenu, second_line
+DisplayLogLight2Loop
+        keygoto     key_1, LogMenu
+        keygoto     key_2, DisplayLogLight3
+        bra         DisplayLogLight2Loop
+; ----------------------------------------------------------------------------
+DisplayLogLight3
+        call        ClearLCD
+        displight   light3, Light3Msg
+        lcddisplay  LogResultsMenu, second_line
+DisplayLogLight3Loop
+        keygoto     key_1, LogMenu
+        keygoto     key_2, DisplayLogLight3
+        bra         DisplayLogLight3Loop
+; ----------------------------------------------------------------------------
+DisplayLogLight4
+        call        ClearLCD
+        displight   light4, Light4Msg
+        lcddisplay  LogResultsMenu, second_line
+DisplayLogLight4Loop
+        keygoto     key_1, LogMenu
+        keygoto     key_2, DisplayLogLight5
+        bra         DisplayLogLight4Loop
+; ----------------------------------------------------------------------------
+DisplayLogLight5
+        call        ClearLCD
+        displight   light5, Light5Msg
+        lcddisplay  LogResultsMenu, second_line
+DisplayLogLight5Loop
+        keygoto     key_1, LogMenu
+        keygoto     key_2, DisplayLogLight6
+        bra         DisplayLogLight5Loop
+; ----------------------------------------------------------------------------
+DisplayLogLight6
+        call        ClearLCD
+        displight   light6, Light6Msg
+        lcddisplay  LogResultsMenu, second_line
+DisplayLogLight6Loop
+        keygoto     key_1, LogMenu
+        keygoto     key_2, DisplayLogLight7
+        bra         DisplayLogLight6Loop
+; ----------------------------------------------------------------------------
+DisplayLogLight7
+        call        ClearLCD
+        displight   light7, Light7Msg
+        lcddisplay  LogResultsMenu, second_line
+DisplayLogLight7Loop
+        keygoto     key_1, LogMenu
+        keygoto     key_2, DisplayLogLight8
+        bra         DisplayLogLight7Loop
+; ----------------------------------------------------------------------------
+DisplayLogLight8
+        call        ClearLCD
+        displight   light8, Light8Msg
+        lcddisplay  LogResultsMenu, second_line
+DisplayLogLight8Loop
+        keygoto     key_1, LogMenu
+        keygoto     key_2, DisplayLogLight9
+        bra         DisplayLogLight8Loop
+; ----------------------------------------------------------------------------
+DisplayLogLight9
+        call        ClearLCD
+        displight   light9, Light9Msg
+        lcddisplay  LogResultsMenu, second_line
+DisplayLogLight9Loop
+        keygoto     key_1, LogMenu
+        keygoto     key_2, EndLogResults
+        bra         DisplayLogLight9Loop
+; ----------------------------------------------------------------------------
+EndLogResults
+        call        ClearLCD
+        lcddisplay  AllResultsShown, first_line
+        call        Delay1s
+        call        Delay1s
+        call        ClearLCD
+        lcddisplay  LogResultsDone1, first_line
+        lcddisplay  ResultsDone2, second_line
+EndLogResultsLoop
+        keygoto     key_1, LogMenu
+        keygoto     key_2, DisplayLogLight1
+        bra         EndLogResultsLoop
 
 ; ============================================================================
 ; Emergency Stop Routine
