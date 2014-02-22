@@ -101,6 +101,8 @@
 
         ; E-stop registers
         e_stop_poll
+        display_flag
+        display_light
         curr_display_1u
         curr_display_1h
         curr_display_1l
@@ -229,6 +231,30 @@ redisp          macro
                 movf    curr_display_1l, W
                 movwf   TBLPTRL
                 call    WriteLCDChar
+                movlw   second_line
+                writelcdinst
+                movf    curr_display_2u, W
+                movwf   TBLPTRU
+                movf    curr_display_2h, W
+                movwf   TBLPTRH
+                movf    curr_display_2l, W
+                movwf   TBLPTRL
+                call    WriteLCDChar
+                endm
+
+redisp_light    macro   light
+                movff   light, current_light
+                movlw   first_line
+                writelcdinst
+                movf    curr_display_1u, W
+                movwf   TBLPTRU
+                movf    curr_display_1h, W
+                movwf   TBLPTRH
+                movf    curr_display_1l, W
+                movwf   TBLPTRL
+                call    WriteLCDChar
+                call    WriteLCDLightResults
+
                 movlw   second_line
                 writelcdinst
                 movf    curr_display_2u, W
@@ -524,9 +550,13 @@ DisplayOperation
         goto        DisplayLight1
 ; ----------------------------------------------------------------------------
 DisplayLight1
+        bsf         display_flag, 0
         call        ClearLCD
         displight   light1, Light1Msg           ; display results from light 1
+        movff       light1, display_light
+        store_disp1 Light1Msg
         lcddisplay  ResultsMenu, second_line
+        store_disp2 ResultsMenu
 DisplayLight1Loop
         ; user presses 1- go to main menu, 2- go to next light
         keygoto     key_1, Menu
@@ -536,7 +566,10 @@ DisplayLight1Loop
 DisplayLight2
         call        ClearLCD
         displight   light2, Light2Msg           ; display results from light 2
+        movff       light2, display_light
+        store_disp1  Light2Msg
         lcddisplay  ResultsMenu, second_line
+        store_disp2 ResultsMenu
 DisplayLight2Loop
         ; user presses 1- go to main menu, 2- go to next light
         keygoto     key_1, Menu
@@ -546,7 +579,10 @@ DisplayLight2Loop
 DisplayLight3
         call        ClearLCD
         displight   light3, Light3Msg           ; display results from light 3
+        movff       light3, display_light
+        store_disp1 Light3Msg
         lcddisplay  ResultsMenu, second_line
+        store_disp2 ResultsMenu
 DisplayLight3Loop
         ; user presses 1- go to main menu, 2- go to next light
         keygoto     key_1, Menu
@@ -556,7 +592,10 @@ DisplayLight3Loop
 DisplayLight4
         call        ClearLCD
         displight   light4, Light4Msg           ; display results from light 4
+        movff       light4, display_light
+        store_disp1 Light4Msg
         lcddisplay  ResultsMenu, second_line
+        store_disp2 ResultsMenu
 DisplayLight4Loop
         ; user presses 1- go to main menu, 2- go to next light
         keygoto     key_1, Menu
@@ -566,7 +605,10 @@ DisplayLight4Loop
 DisplayLight5
         call        ClearLCD
         displight   light5, Light5Msg           ; display results from light 5
+        movff       light5, display_light
+        store_disp1 Light5Msg
         lcddisplay  ResultsMenu, second_line
+        store_disp2 ResultsMenu
 DisplayLight5Loop
         ; user presses 1- go to main menu, 2- go to next light
         keygoto     key_1, Menu
@@ -576,7 +618,10 @@ DisplayLight5Loop
 DisplayLight6
         call        ClearLCD
         displight   light6, Light6Msg           ; display results from light 6
+        movff       light6, display_light
+        store_disp1 Light6Msg
         lcddisplay  ResultsMenu, second_line
+        store_disp2 ResultsMenu
 DisplayLight6Loop
         ; user presses 1- go to main menu, 2- go to next light
         keygoto     key_1, Menu
@@ -586,7 +631,10 @@ DisplayLight6Loop
 DisplayLight7
         call        ClearLCD
         displight   light7, Light7Msg           ; display results from light 7
+        movff       light7, display_light
+        store_disp1 Light7Msg
         lcddisplay  ResultsMenu, second_line
+        store_disp2 ResultsMenu
 DisplayLight7Loop
         ; user presses 1- go to main menu, 2- go to next light
         keygoto     key_1, Menu
@@ -596,7 +644,10 @@ DisplayLight7Loop
 DisplayLight8
         call        ClearLCD
         displight   light8, Light8Msg           ; display results from light 8
+        movff       light8, display_light
+        store_disp1 Light8Msg
         lcddisplay  ResultsMenu, second_line
+        store_disp2 ResultsMenu
 DisplayLight8Loop
         ; user presses 1- go to main menu, 2- go to next light
         keygoto     key_1, Menu
@@ -606,7 +657,10 @@ DisplayLight8Loop
 DisplayLight9
         call        ClearLCD
         displight   light9, Light9Msg           ; display results from light 9
+        movff       light9, display_light
+        store_disp1 Light9Msg
         lcddisplay  ResultsMenu, second_line
+        store_disp2 ResultsMenu
 DisplayLight9Loop
         ; user presses 1- go to main menu, 2- go to next light
         keygoto     key_1, Menu
@@ -617,13 +671,18 @@ DisplayLight9Loop
 EndDisplay
         ; Prompt user whether they want to display results again or go back
         ; to the main menu.
+        bcf         display_flag, 0
         call        ClearLCD
         lcddisplay  AllResultsShown, first_line
+        store_disp1 AllResultsShown
+        store_disp2 BlankLine
         call        Delay1s
         call        Delay1s
         call        ClearLCD
         lcddisplay  ResultsDone1, first_line
+        store_disp1 ResultsDone1
         lcddisplay  ResultsDone2, second_line
+        store_disp2 ResultsDone2
 EndDisplayLoop
         ; user presses 1- go to main menu, 2- display results again
         keygoto     key_1, Menu
@@ -638,7 +697,9 @@ EndDisplayLoop
 LogMenu
         call        ClearLCD
         lcddisplay  LogMsg1, first_line
+        store_disp1 LogMsg1
         lcddisplay  LogMsg2, second_line
+        store_disp2 LogMsg2
 LogLoop
         keygoto     key_1, Menu
         keygoto     key_A, ChooseLogA
@@ -651,6 +712,8 @@ ChooseLogA
         call        ClearLCD
         movlf       '0', log_to_show
         lcddisplay  LogMsgA, first_line
+        store_disp1 LogMsgA
+        store_disp2 BlankLine
         call        Delay1s
         call        Delay1s
         bra         DisplayLogTime
@@ -658,6 +721,8 @@ ChooseLogB
         call        ClearLCD
         movlf       d'20', log_to_show
         lcddisplay  LogMsgB, first_line
+        store_disp1 LogMsgB
+        store_disp2 BlankLine
         call        Delay1s
         call        Delay1s
         bra         DisplayLogTime
@@ -665,6 +730,8 @@ ChooseLogC
         call        ClearLCD
         movlf       d'40', log_to_show
         lcddisplay  LogMsgC, first_line
+        store_disp1 LogMsgC
+        store_disp2 BlankLine
         call        Delay1s
         call        Delay1s
         bra         DisplayLogTime
@@ -672,6 +739,8 @@ ChooseLogD
         call        ClearLCD
         movlf       d'60', log_to_show
         lcddisplay  LogMsgD, first_line
+        store_disp1 LogMsgD
+        store_disp2 BlankLine
         call        Delay1s
         call        Delay1s
         bra         DisplayLogTime
@@ -709,9 +778,13 @@ LoadResults
         bra         DisplayLogLight1
 ; ----------------------------------------------------------------------------
 DisplayLogLight1
+        bsf         display_flag, 0
         call        ClearLCD
         displight   light1, Light1Msg
+        movff       light1, display_light
+        store_disp1 Light1Msg
         lcddisplay  LogResultsMenu, second_line
+        store_disp2 LogResultsMenu
 DisplayLogLight1Loop
         keygoto     key_1, LogMenu
         keygoto     key_2, DisplayLogLight2
@@ -720,7 +793,10 @@ DisplayLogLight1Loop
 DisplayLogLight2
         call        ClearLCD
         displight   light2, Light2Msg
+        movff       light2, display_light
+        store_disp1 Light2Msg
         lcddisplay  LogResultsMenu, second_line
+        store_disp2 LogResultsMenu
 DisplayLogLight2Loop
         keygoto     key_1, LogMenu
         keygoto     key_2, DisplayLogLight3
@@ -729,7 +805,10 @@ DisplayLogLight2Loop
 DisplayLogLight3
         call        ClearLCD
         displight   light3, Light3Msg
+        movff       light3, display_light
+        store_disp1 Light3Msg
         lcddisplay  LogResultsMenu, second_line
+        store_disp2 LogResultsMenu
 DisplayLogLight3Loop
         keygoto     key_1, LogMenu
         keygoto     key_2, DisplayLogLight4
@@ -738,7 +817,10 @@ DisplayLogLight3Loop
 DisplayLogLight4
         call        ClearLCD
         displight   light4, Light4Msg
+        movff       light4, display_light
+        store_disp1 Light4Msg
         lcddisplay  LogResultsMenu, second_line
+        store_disp2 LogResultsMenu
 DisplayLogLight4Loop
         keygoto     key_1, LogMenu
         keygoto     key_2, DisplayLogLight5
@@ -747,7 +829,10 @@ DisplayLogLight4Loop
 DisplayLogLight5
         call        ClearLCD
         displight   light5, Light5Msg
+        movff       light5, display_light
+        store_disp1 Light5Msg
         lcddisplay  LogResultsMenu, second_line
+        store_disp2 LogResultsMenu
 DisplayLogLight5Loop
         keygoto     key_1, LogMenu
         keygoto     key_2, DisplayLogLight6
@@ -756,7 +841,10 @@ DisplayLogLight5Loop
 DisplayLogLight6
         call        ClearLCD
         displight   light6, Light6Msg
+        movff       light6, display_light
+        store_disp1 Light6Msg
         lcddisplay  LogResultsMenu, second_line
+        store_disp2 LogResultsMenu
 DisplayLogLight6Loop
         keygoto     key_1, LogMenu
         keygoto     key_2, DisplayLogLight7
@@ -765,7 +853,10 @@ DisplayLogLight6Loop
 DisplayLogLight7
         call        ClearLCD
         displight   light7, Light7Msg
+        movff       light7, display_light
+        store_disp1 Light7Msg
         lcddisplay  LogResultsMenu, second_line
+        store_disp2 LogResultsMenu
 DisplayLogLight7Loop
         keygoto     key_1, LogMenu
         keygoto     key_2, DisplayLogLight8
@@ -790,6 +881,7 @@ DisplayLogLight9Loop
         bra         DisplayLogLight9Loop
 ; ----------------------------------------------------------------------------
 EndLogResults
+        bcf         display_flag, 0
         call        ClearLCD
         lcddisplay  AllResultsShown, first_line
         call        Delay1s
@@ -830,7 +922,16 @@ EndPollEStopLoop
         call        ClearLCD
         lcddisplay  EStopResume1, first_line
         call        Delay1s
+        call        ClearLCD
+        btfss       display_flag, 0
+        goto        ReDisplayLight
+        goto        ReDisplayGeneral
+        return
+ReDisplayLight
+        redisp_light display_light
+ReDisplayGeneral
         redisp
+EndPollEStop
         return
 
         ; check 0th bit of Port B in a loop until it returns high
