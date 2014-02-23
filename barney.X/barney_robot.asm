@@ -361,6 +361,16 @@ displight       macro   register, table
             call    WriteLCDChar
             call    WriteLCDLightResults
             endm
+
+; ----------------------------------------------------------------------------
+; rtcdisp: Writes inputted rtc register to lcd display
+rtc_disp    macro   rtc_data
+            rtc_convert rtc_data
+            movff       tens_digit, WREG
+            call        WriteLCDCharData
+            movff       ones_digit, WREG
+            call        WriteLCDCharData
+            endm
 ; ----------------------------------------------------------------------------
 ; Sensor Arrays macros
 ; ----------------------------------------------------------------------------
@@ -1259,52 +1269,25 @@ ReadFromRTC
 
 RTCDisplayTopLeft
         call        ReadFromRTC
-        movlw       B'10000000'
-        writelcdinst
+        ;movlw       B'10000000'
+        ;writelcdinst
 
-        rtc_convert rtc_mon
-        movff       tens_digit, WREG
-        call        WriteLCDCharData
-        movff       ones_digit, WREG
-        call        WriteLCDCharData
+        lcddisplay  DateMsg, first_line
 
+        rtc_disp    rtc_mon
         movlw       0x2F
         call        WriteLCDCharData
-
-        rtc_convert rtc_date
-        movff       tens_digit, WREG
-        movff       tens_digit, WREG
-        call        WriteLCDCharData
-        movff       ones_digit, WREG
-        call        WriteLCDCharData
-
+        rtc_disp    rtc_date
         movlw       0x2F
         call        WriteLCDCharData
+        rtc_disp    rtc_yr
 
-        rtc_convert rtc_yr
-        movff       tens_digit, WREG
-        movff       tens_digit, WREG
-        call        WriteLCDCharData
-        movff       ones_digit, WREG
-        call        WriteLCDCharData
+        lcddisplay  TimeMsg, second_line
 
-        movlw       0x20
-        call        WriteLCDCharData
-
-        rtc_convert rtc_hr
-        movff       tens_digit, WREG
-        call        WriteLCDCharData
-        movff       ones_digit, WREG
-        call        WriteLCDCharData
-
+        rtc_disp    rtc_hr
         movlw       0x3A                ; ":"
         call        WriteLCDCharData
-
-        rtc_convert rtc_min
-        movff       tens_digit, WREG
-        call        WriteLCDCharData
-        movff       ones_digit, WREG
-        call        WriteLCDCharData
+        rtc_disp    rtc_min
 
         return
 
