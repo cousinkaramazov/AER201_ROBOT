@@ -86,6 +86,7 @@
         light_result
         ; Light result registers
         current_light
+        lights_present
         light1
         light2
         light3
@@ -138,6 +139,10 @@
         start_time_min
         end_time_sec
         end_time_min
+        temp_var4
+        temp_var5
+        second_diff
+        min_diff
     endc
 
 
@@ -166,6 +171,36 @@ beq         macro   literal, register, label
             infsnz  WREG
             goto    label
             endm
+; ----------------------------------------------------------------------------
+conv_dig    macro   register
+            movf    register, W
+            addlw   0x30
+            endm
+
+;conv_bcd    macro   bcd_rep, total_rep
+;            movf    bcd_rep, W
+;            andlw   0x0F
+;            movwf   ones
+;            swapf   bcd_rep, W
+;            andlw   0x0F
+;            movwf   tens_nibble
+;            mullf   d'10', tens_nibble, tens
+;            addff   ones, tens, total_rep
+;            endm
+;
+;
+;mullf       macro   literal, register, result
+;            movf    register, W
+;            mullw   literal
+;            movwf   result
+;            endm
+;
+;addff       macro   reg1, reg2, result
+;            movff   reg1, result
+;            movf    reg2, W
+;            addwf   result, f
+;            endm
+
 
 
 ; ----------------------------------------------------------------------------
@@ -238,21 +273,26 @@ shift_logs  macro   log1, log2
 ; ----------------------------------------------------------------------------
 ; E-stop macros
 ; ----------------------------------------------------------------------------
+; store_disp1- stores current first line table into register
 store_disp1     macro   table
                 movlf   upper table, curr_display_1u
                 movlf   high table, curr_display_1h
                 movlf   low table, curr_display_1l
                 endm
-
+; ----------------------------------------------------------------------------
+; store_disp2- stores current second line table into register
 store_disp2     macro   table
                 movlf   upper table, curr_display_2u
                 movlf   high table, curr_display_2h
                 movlf   low table, curr_display_2l
                 endm
-
+; ----------------------------------------------------------------------------
+; redisp- takes tables stored and redisplays them on LCD
 redisp          macro
+                ; set LCD to write on first line
                 movlw   first_line
                 writelcdinst
+                ; write stored first line back onto LCD
                 movf    curr_display_1u, W
                 movwf   TBLPTRU
                 movf    curr_display_1h, W
@@ -260,8 +300,10 @@ redisp          macro
                 movf    curr_display_1l, W
                 movwf   TBLPTRL
                 call    WriteLCDChar
+                ;set LCD to write on second line
                 movlw   second_line
                 writelcdinst
+                ; write stored second line back onto LCD
                 movf    curr_display_2u, W
                 movwf   TBLPTRU
                 movf    curr_display_2h, W
@@ -270,11 +312,14 @@ redisp          macro
                 movwf   TBLPTRL
                 call    WriteLCDChar
                 endm
-
+; ----------------------------------------------------------------------------
+; redisp_light- redisplays interrupted light display back onto LCD
 redisp_light    macro   light
                 movff   light, current_light
+                ; set LCD to write on first line
                 movlw   first_line
                 writelcdinst
+                ; write stored light message and the light's results
                 movf    curr_display_1u, W
                 movwf   TBLPTRU
                 movf    curr_display_1h, W
@@ -283,9 +328,10 @@ redisp_light    macro   light
                 movwf   TBLPTRL
                 call    WriteLCDChar
                 call    WriteLCDLightResults
-
+                ; set LCD to write on second line
                 movlw   second_line
                 writelcdinst
+                ; write whichever menu needs to be written back on LCD
                 movf    curr_display_2u, W
                 movwf   TBLPTRU
                 movf    curr_display_2h, W
@@ -294,8 +340,6 @@ redisp_light    macro   light
                 movwf   TBLPTRL
                 call    WriteLCDChar
                 endm
-
-
 ; ----------------------------------------------------------------------------
 ; Keypad macros
 ; ----------------------------------------------------------------------------
@@ -379,10 +423,6 @@ storeSR         macro   register
             movff   PORTC, test_light
             movf    test_light, w
             andlw   b'00100111'     ; mask all bits but SR output
-;            ; rotate until output bits are farthest right possible
-;            rrncf   WREG, w
-;            rrncf   WREG, w
-;            rrncf   WREG, w
             movwf   test_light       ; store processed output for later use
             btfss   test_light, 5    ; if no light present...
             call    NoLightPresent   ;...call subroutine to take care of this
@@ -393,75 +433,80 @@ storeSR         macro   register
 ; ----------------------------------------------------------------------------
 ; I2C macros - code inspired by sample code provided
 ; ----------------------------------------------------------------------------
+; i2c_start- tells I2C to begin transaction
 i2c_start       macro
         bsf     SSPCON2, SEN
         call    CheckI2C
         endm
-
+; ----------------------------------------------------------------------------
+; i2c_stop- tells I2C that transaction has stopped
 i2c_stop        macro
         bsf     SSPCON2, PEN
         call    CheckI2C
         endm
-
+; ----------------------------------------------------------------------------
+; i2c_write- writes current value of WREG into I2C buffer
 i2c_write       macro
         movwf   SSPBUF
         call    CheckI2C
         endm
-
+; ----------------------------------------------------------------------------
+; rd_i2c_buf_ack- read I2C buffer, send acknowledge- keep reading
 rd_i2c_buf_ack  macro   rtc_reg
         bsf     SSPCON2, RCEN
         call    CheckI2C
         i2c_common_ack
         movff   SSPBUF, rtc_reg
         endm
-
-
+; ----------------------------------------------------------------------------
+; rd_i2c_buf_nack- read I2C buffer, send not acknowledge- done reading
 rd_i2c_buf_nack macro   rtc_reg
         bsf     SSPCON2, RCEN
         call    CheckI2C
         i2c_common_nack
         movff   SSPBUF, rtc_reg
         endm
-
-
-
+; ----------------------------------------------------------------------------
+; i2c_common_ack - send acknowledge to slave device
 i2c_common_ack  macro
         bcf     SSPCON2,ACKDT
         bsf     SSPCON2,ACKEN
         call    CheckI2C
         endm
-
+; ----------------------------------------------------------------------------
+; i2c_common_nack - send not acknowledge to slave device
 i2c_common_nack	macro
         bsf      SSPCON2,ACKDT
         bsf      SSPCON2,ACKEN
         call     CheckI2C
         endm
-
-; rtc_wr - writes data given to register in RTC at address
+; ----------------------------------------------------------------------------
+; RTC macros
+; ----------------------------------------------------------------------------
+; rtc_wr - writes data given to register at address in RTC
 rtc_wr   macro   address, rtc_data
         i2c_start
         movlw       0xD0            ; RTC address
         i2c_write
-        movlw       address         ; set register address on I2c
+        movlw       address         ; set register address on I2C
         i2c_write
         movlw       rtc_data        ; write data to RTC register
         i2c_write
         i2c_stop
         endm
-
+; ----------------------------------------------------------------------------
 ; rtc_convert- takes BCD coded data and outputs an ASCII ones and tens digit
+; these are stored in registers tens_digit and ones_digit
 rtc_convert macro   rtc_data
         swapf       rtc_data, W
-        andlw       B'00001111'
-        addlw       0x30
-        movwf       tens_digit
+        andlw       B'00001111'     ; masks all but MSBs of rtc_data
+        addlw       0x30            ; required to convert to ASCII
+        movwf       tens_digit      ; store in tens_digit
         movf        rtc_data, W
-        andlw       B'00001111'
-        addlw       0x30
-        movwf       ones_digit
+        andlw       B'00001111'     ; masks all but LSBs of rtc_data
+        addlw       0x30            ; required to convert to ASCII
+        movwf       ones_digit      ; store in ones_digit
         endm
-
-
 ; ============================================================================
 ; Vectors
 ; ============================================================================
@@ -488,6 +533,9 @@ LogMsg1                 db      "View which log?", 0
 LogMsg2                 db      "1: Main Menu", 0
 
 OpResults               db      "Results:", 0
+TimeTakenMsg            db      "Time taken:", 0
+
+LightsPresentMsg        db      "Lights present:", 0
 
 Light1Msg               db      "Light 1: ", 0
 Light2Msg               db      "Light 2: ", 0
@@ -529,6 +577,7 @@ DateMsg                 db      "Date: ", 0
 TimeMsg                 db      "Time: ", 0
 
 
+
 ; ============================================================================
 ; Main program
 ; ============================================================================
@@ -536,6 +585,7 @@ TimeMsg                 db      "Time: ", 0
 Main
 ; ----------------------------------------------------------------------------
 ; Configure- Sets up machine for use.
+; ----------------------------------------------------------------------------
 Configure
         ; set all ports to output
         clrf        TRISA
@@ -574,23 +624,25 @@ Configure
         bsf         INTCON, INT0IE          ; RB0 is interrupt
         bcf         INTCON2, INTEDG0        ; falling edge trigger
 
-        call        ConfigureLCD                ; Initializes LCD, sets parameters as needed
-        call        ConfigureI2C
-        call        InitializeRTC
+        call        ConfigureLCD            ; Configures LCD, sets parameters as needed
+        call        ConfigureI2C            ; Configures I2C for RTC
+        call        InitializeRTC           ; Only called when clock needs to be reconfigured
        
 ; ----------------------------------------------------------------------------
-; Welcome - Initially shown on start up until user presses a button.
+; Welcome - Initially shown on start up until user presses a button.  Displays
+; date and time.
+; ----------------------------------------------------------------------------
 WelcomeScreen
         call        ClearLCD
-        call        RTCDisplayTopLeft
+        store_disp1 WelcomeMsg
+        store_disp2 WelcomeMsg2
+        call        RTCDisplayTimeDate       ; display date and time
         call        Delay1s
         call        Delay1s
         call        ClearLCD
         ;display first and secondlines of welcome message
         lcddisplay  WelcomeMsg, first_line
-        store_disp1 WelcomeMsg
         lcddisplay  WelcomeMsg2, second_line
-        store_disp2 WelcomeMsg2
 WelcomeLoop
         call        CheckAnyButton
         beq         d'1', keypad_result, Menu   ; if key has not been pressed
@@ -598,6 +650,7 @@ WelcomeLoop
 ; ----------------------------------------------------------------------------
 ; Main Menu- From here user can begin an operation or access previous operation
 ; logs.
+; ----------------------------------------------------------------------------
 Menu
         movlf       '0', display_flag
         call        ClearLCD                    ;Clears LCD Screen
@@ -612,7 +665,9 @@ MenuLoop
         keygoto     key_2, LogMenu
         bra         MenuLoop
 ; ----------------------------------------------------------------------------
-; Begin Operation- TODO: Manages all motors and sensors needed to test LCD.
+; Begin Operation- Manages all motors and sensors needed to test LCD.
+; Stores needed light data in logs, calculates time needed for operation.
+; ----------------------------------------------------------------------------
 BeginOperation
         ; get Start time of operation
         call        ReadFromRTC
@@ -642,9 +697,6 @@ BeginOperation
         movff       rtc_min, end_time_min
         call        Delay1s                 ; allow user time to read message
         goto        DisplayOperation
-
-
-
 ; ----------------------------------------------------------------------------
 ; Display Operation - Tells user results are about to be shown.  Then displays
 ; each individual light's results.
@@ -656,10 +708,35 @@ DisplayOperation
         store_disp2 BlankLine
         call        Delay1s
         call        Delay1s
-        goto        DisplayLight1
+        goto        DisplayLightsPresent
+; ----------------------------------------------------------------------------
+DisplayLightsPresent
+        call        ClearLCD
+        movlf       d'0', lights_present
+        call        GetLightsPresent    
+        lcddisplay  LightsPresentMsg, first_line
+        ;movlf       d'9', lights_present
+        ;movlf       d'0', lights_present
+        conv_dig    lights_present
+        call        WriteLCDCharData
+        call        Delay1s
+        call        Delay1s
+; ----------------------------------------------------------------------------
+DisplayTimeTaken
+        call        ClearLCD
+        call        GetTimeTaken
+        lcddisplay  TimeTakenMsg, first_line
+        movlw       second_line
+        writelcdinst
+        rtc_disp    min_diff
+        movlw       0x3A                ; ":"
+        call        WriteLCDCharData
+        rtc_disp    second_diff
+        call        Delay1s
+        call        Delay1s
 ; ----------------------------------------------------------------------------
 DisplayLight1
-        movlf       b'11111111', display_flag
+        movlf       b'11111111', display_flag   ; currently displaying lights
         call        ClearLCD
         displight   light1, Light1Msg           ; display results from light 1
         movff       light1, display_light
@@ -780,14 +857,16 @@ DisplayLight9Loop
 EndDisplay
         ; Prompt user whether they want to display results again or go back
         ; to the main menu.
-        movlf       b'00000000', display_flag
+        movlf       b'00000000', display_flag   ; no longer displaying lights
         call        ClearLCD
+        ; display "All lights shown"
         lcddisplay  AllResultsShown, first_line
         store_disp1 AllResultsShown
         store_disp2 BlankLine
         call        Delay1s
         call        Delay1s
         call        ClearLCD
+        ; "Display "1: Main Menu, 2: Show again"
         lcddisplay  ResultsDone1, first_line
         store_disp1 ResultsDone1
         lcddisplay  ResultsDone2, second_line
@@ -1007,19 +1086,32 @@ EndLogResultsLoop
 ; ============================================================================
 ; Emergency Stop Routine
 ; ============================================================================
+; ----------------------------------------------------------------------------
+; EmergencyStop: Loops until I2C has successfully been read/written from/to
+; INPUT: None
+; OUTPUT: None
+; ----------------------------------------------------------------------------
 EmergencyStop
         bcf         INTCON, INT0IF      ; clear flag used for E Stop
         call        ClearLCD
+        ; Display emergency stop message
         lcddisplay  EStopFlash1, first_line
         lcddisplay  EStopFlash2, second_line
         call        Delay1s
         call        Delay1s
         call        ClearLCD
+        ; Display "deactivate when ready"
         lcddisplay  EStopActive1, first_line
         lcddisplay  EStopActive2, second_line
+        ; poll PORTB until RB0 is high once more, i.e. e-stop deactivated
         call        PollEStop
         retfie
-
+; ----------------------------------------------------------------------------
+; PollEStop: Loops until E-stop deactivated, redisplays message that was
+; being displayed when E-stop activated
+; INPUT: None
+; OUTPUT: None
+; ----------------------------------------------------------------------------
 PollEStop
         bcf         INTCON, GIE         ; disable interrupts
 PollEStopLoop
@@ -1028,22 +1120,23 @@ PollEStopLoop
         goto        EndPollEStopLoop    ; otherwise stop polling
         bra         PollEStopLoop
 EndPollEStopLoop
-        bsf         INTCON, GIE
+        bsf         INTCON, GIE         ; reenable interrupts
+        ;display "Resuming..."
         call        ClearLCD
         lcddisplay  EStopResume1, first_line
         call        Delay1s
         call        ClearLCD
+        ; check if we are displaying a light or a general message
         btfsc       display_flag, 0
         goto        ReDisplayLight
         goto        ReDisplayGeneral
 ReDisplayGeneral
-        redisp
+        redisp                      ; not displaying light, simply redisplay
         goto        EndPollEStop
 ReDisplayLight
-        redisp_light display_light
+        redisp_light display_light  ; displaying light, redisplay current light
         goto        EndPollEStop
         gotoEndPollEStop
-
 EndPollEStop
         return
 
@@ -1206,8 +1299,6 @@ CheckI2C
 EndCheckI2C
         bcf         PIR1, SSPIF
         return
-
-
 ; ----------------------------------------------------------------------------
 ; ConfigureI2C: Configures I2C/RTC for use
 ; INPUT: None
@@ -1246,17 +1337,19 @@ InitializeRTC
 ; OUTPUT: rtc_min, rtc_sec, rtc_hr, rtc_day, rtc_date, rtc_mon, rtc_yr
 ; ----------------------------------------------------------------------------
 ReadFromRTC
+        ; write that we want to start at seconds register
         i2c_start
         movlw       0xD0                ; slave address: write
         i2c_write
         movlw       0x00                ; seconds register
         i2c_write
         i2c_stop
-
+        ; configure RTC clock for reading data
         i2c_start
         movlw       0xD1                ; slave address: read
         i2c_write
-
+        ; repeatedly read values from i2c buffer, write into appropriate rtc
+        ; register
         rd_i2c_buf_ack  rtc_sec
         rd_i2c_buf_ack  rtc_min
         rd_i2c_buf_ack  rtc_hr
@@ -1266,37 +1359,166 @@ ReadFromRTC
         rd_i2c_buf_nack rtc_yr
         i2c_stop
         return
-
-RTCDisplayTopLeft
-        call        ReadFromRTC
-        ;movlw       B'10000000'
-        ;writelcdinst
-
-        lcddisplay  DateMsg, first_line
-
+; ----------------------------------------------------------------------------
+; RTCDisplayTimeDate: Displays date and time on two lines of LCD display
+; INPUT: None
+; OUTPUT: None
+; ----------------------------------------------------------------------------
+RTCDisplayTimeDate
+        call        ReadFromRTC         ; get current value of date, time
+        lcddisplay  DateMsg, first_line ; write "Date: " to first line
+        ; display date in "mm/dd/yy" format
         rtc_disp    rtc_mon
-        movlw       0x2F
+        movlw       0x2F                ; "/"
         call        WriteLCDCharData
         rtc_disp    rtc_date
-        movlw       0x2F
+        movlw       0x2F                ; "/"
         call        WriteLCDCharData
         rtc_disp    rtc_yr
-
-        lcddisplay  TimeMsg, second_line
-
+        ; display time in "hh:mm: format
+        lcddisplay  TimeMsg, second_line ; write "Time: " to second line
         rtc_disp    rtc_hr
         movlw       0x3A                ; ":"
         call        WriteLCDCharData
         rtc_disp    rtc_min
-
         return
 
 ; ----------------------------------------------------------------------------
 ; ComputeTimeDifference: Computes how long an operation took by computing
-; difference between start and end times
+; difference between start and end times, stores BCD results in second_diff and
+; minute_diff
 ; INPUT: start_time_sec, start_time_min, end_time_sec, end_time_min
-; OUTPUT: total_diff
+; OUTPUT: second_diff, min_diff
 ; ----------------------------------------------------------------------------
+GetTimeTaken
+FirstDigitSeconds
+        ; first digit of second
+        movf    end_time_sec, W
+        andlw   0x0F                    ; mask upper MSBs
+        movwf   temp_var4
+        movf    start_time_sec, W
+        andlw   0x0F                    ; mask upper MSBs of starting time
+        movwf   temp_var5
+        ; subtract beginning first digit from ending first digit
+        movff   temp_var5, WREG
+        subwf   temp_var4, 0    ; put result in WREG
+        bnn     FirstDigitSecondsNotNegative         ; if result not negative
+                                        ; go deal with higher bit
+        ; if negative, then add 10 to it
+        addlw   d'10'
+        andlw   0x0F                    ; mask to have lower bit only
+        movwf   second_diff
+        ; and add 1 to the high digit of second of the OLD one
+        swapf   start_time_sec, 0       ; swap to lower nibble and store in W
+        andlw   0x0F                    ; mask it
+        incf    WREG                    ; add one
+        swapf   WREG                    ; swap back to upper nibble
+        movwf   start_time_sec         ; move it back to old data
+        bra     SecondDigitSeconds
+
+FirstDigitSecondsNotNegative
+                andlw   0x0F
+                movwf   second_diff
+
+SecondDigitSeconds
+        ; high digit of second
+        swapf   end_time_sec, w
+        andlw   0x0F                    ; read lower nibble only
+        movwf   temp_var4
+        swapf   start_time_sec, w
+        andlw   0x0F
+        movwf   temp_var5
+        ; TemporaryVariable (new) - TemporaryVariable2 (old)
+        movff   temp_var5, WREG
+        subwf   temp_var4, 0    ; put result in WREG
+        bnn     SecondDigitSecondsNotNegative         ; if result not negative
+                                        ; go deal with higher bit
+        ; if negative, then add 6 to it
+        addlw   d'6'
+        swapf   WREG
+        andlw   0xF0                    ; mask to only have upper bit
+        addwf   second_diff, 1      ; add to store into the second difference
+        ; and add 1 to the low digit of minute of the OLD one
+        ; before adding it, need to check if it's 9. If it is, then will need
+        ; to add one to HighMinute
+        sublw   d'9'
+        bnz     AddOneToFirstDigitMinutes
+AddOneToSecondDigitMinutes
+            movlw   0xF0                ; make the lower bit 0 (bcoz 9+1=10)
+            andwf   start_time_min, 1
+            movlw   0x10
+            addwf   start_time_min, 1   ; add 1 to the high nibble
+            goto     FirstDigitMinutes
+
+AddOneToFirstDigitMinutes
+            ; simply add 1 to the RTC_Minute_Old
+            incf     start_time_min, 1
+            goto     FirstDigitMinutes
+
+SecondDigitSecondsNotNegative
+                andlw   0x0F
+                swapf   WREG
+                addwf   second_diff
+
+FirstDigitMinutes
+        ; lower digit of minute
+        movff   end_time_min, WREG
+        andlw   0x0F                    ; read lower nibble only
+        movwf   temp_var4
+        movff   start_time_min, WREG
+        andlw   0x0F
+        movwf   temp_var5
+        ; TemporaryVariable (new) - TemporaryVariable2 (old)
+        movff   temp_var5, WREG
+        subwf   temp_var4, 0    ; put result in WREG
+        bnn     FirstDigitMinutesNotNegative         ; if result not negative
+                                        ; go deal with higher bit
+        ; if negative, then add 10 to it
+        addlw   d'10'
+        andlw   0x0F                    ; mask to have lower bit only
+        movwf   min_diff
+        ; and add 1 to the high digit of minute of the OLD one
+        swapf   start_time_min, 0       ; swap to lower nibble and store in W
+        andlw   0x0F                    ; mask it
+        incf    WREG                    ; add one
+        swapf   WREG                    ; swap back to upper nibble
+        movwf   start_time_min          ; move it back to old data
+        bra     SecondDigitMinutes
+
+FirstDigitMinutesNotNegative
+                andlw   0x0F
+                movwf   min_diff
+
+SecondDigitMinutes
+        ; high digit of minute
+        swapf   end_time_min, w
+        andlw   0x0F                    ; read lower nibble only
+        movwf   temp_var4
+        swapf   start_time_min, w
+        andlw   0x0F
+        movwf   temp_var5
+        ; TemporaryVariable (new) - TemporaryVariable2 (old)
+        movff   temp_var5, WREG
+        subwf   temp_var4, 0    ; put result in WREG
+        bnn     SecondDigitMinutesNotNegative     ; if result not negative
+                                        ; go deal with higher bit
+        ; if negative, then add 6 to it
+        addlw   d'6'
+        swapf   WREG
+        andlw   0xF0                    ; mask to only have upper bit                    ; mask to only have upper bit
+        addwf   min_diff, 1      ; add to store into the second difference
+        ; and add 1 to the low digit of hour of the OLD one
+        bra     EndGetTimeTaken
+
+SecondDigitMinutesNotNegative
+                andlw   0x0F
+                swapf   WREG
+                addwf   min_diff
+
+EndGetTimeTaken
+        return
+
+
 
 
 
@@ -1340,12 +1562,12 @@ ReadSensorInput
         bcf         SR_LOAD
         call        Delay5ms
         call        Delay5ms
-        call        Delay1s
+        call        Delay1s     ; for demonstrative purposes
         call        Delay5ms
         bsf         SR_LOAD
         bcf         SR_CINHIBIT ; disable clock inhibit
         ; send posedges until all lights read
-        call        Delay1s
+        call        Delay1s     ; for demonstrative purposes
         call        ClockSRs
         storeSR     light1
         call        ClockSRs
@@ -1418,6 +1640,43 @@ AddLEDCount
         addlw       b'1'
         movwf       LED_count
         return
+
+; ----------------------------------------------------------------------------
+; GetLightsPresent: Count number of flashlights present
+; INPUT: None
+; OUTPUT: lights_present
+; ----------------------------------------------------------------------------
+GetLightsPresent
+        btfss       light1, 7
+        call        AddLightCount
+        btfss       light2, 7
+        call        AddLightCount
+        btfss       light3, 7
+        call        AddLightCount
+        btfss       light4, 7
+        call        AddLightCount
+        btfss       light5, 7
+        call        AddLightCount
+        btfss       light6, 7
+        call        AddLightCount
+        btfss       light7, 7
+        call        AddLightCount
+        btfss       light8, 7
+        call        AddLightCount
+        btfss       light9, 7
+        call        AddLightCount
+        return
+; ----------------------------------------------------------------------------
+; GetLightsPresent: Flashlight detected, add one to lights_present
+; INPUT: None
+; OUTPUT: lights_present
+; ----------------------------------------------------------------------------
+AddLightCount
+        movf        lights_present, W
+        addlw       b'1'
+        movwf       lights_present
+        return
+
 ; ----------------------------------------------------------------------------
 ; LCD Subroutines
 ; ----------------------------------------------------------------------------
@@ -1500,24 +1759,28 @@ MovMSB
         iorlw       0x0F
         andwf       PORTD, f
         return
-
-
+; ----------------------------------------------------------------------------
+; WriteLCDCharData: Writes bare bones data in W register to LCD display
+; INPUT: W
+; OUTPUT: None
+; ----------------------------------------------------------------------------
 WriteLCDCharData
-        bsf         LCD_RS
-        movwf       temp_var3
-        call        MovMSB
+        bsf         LCD_RS      ; prepare LCD for write
+        movwf       temp_var3   ; save W register for future use
+        call        MovMSB      ; move MSBs into PORTD
+        ; pulse LCD enable bit
         bsf         LCD_E
         call        Delay44us
         bcf         LCD_E
+        ; swap nibbles, move MSBs into PORTD
         swapf       temp_var3, 0
         call        MovMSB
+        ;pulse LCD enable bit
         bsf         LCD_E
         call        Delay44us
         bcf         LCD_E
         call        Delay44us
         return
-
-
 ; ----------------------------------------------------------------------------
 ; ClearLCD: Clear both lines of LCD
 ; INPUT: None
@@ -1569,7 +1832,6 @@ NotPresent
         ; write character data to LCD
         call    WriteLCDChar
         goto    EndWriteLCDLightResults
-
 OneWorking
        ; move full address of table into Table Pointer
         movlw   upper working_1
@@ -1605,7 +1867,6 @@ ThreeWorking
         goto    EndWriteLCDLightResults
 EndWriteLCDLightResults
         return
-
 ; ----------------------------------------------------------------------------
 ; Keypad Subroutines
 ; ----------------------------------------------------------------------------
@@ -1617,13 +1878,10 @@ CheckAnyButton
         movff       PORTB, keypad_data
         btfsc       keypad_data, 1
         goto        AnyPressed ; a key has been pressed
-
         movlf       B'0', keypad_result
         goto        EndCheckAnyButton
-
 AnyPressed
         movlf       B'1', keypad_result
-
 EndCheckAnyButton
         return
 
@@ -1636,12 +1894,10 @@ CheckButton
         movff       PORTB, keypad_data
         btfss       keypad_data, 1      ;test if any data is input
         goto        NoButtonPressed
-
         swapf       keypad_data, W
         andlw       B'00001111'
         subwf       keypad_test, w
         bnz         NoButtonPressed
-
         movlf        d'1', keypad_result
         bra          EndCheckButton
 NoButtonPressed
@@ -1649,8 +1905,6 @@ NoButtonPressed
         goto        EndCheckButton
 EndCheckButton
         return
-
-
 ; ----------------------------------------------------------------------------
 ; Delay Subroutines
 ; ----------------------------------------------------------------------------
