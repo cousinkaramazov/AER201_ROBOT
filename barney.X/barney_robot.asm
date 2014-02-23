@@ -119,7 +119,6 @@
         curr_display_2u
         curr_display_2h
         curr_display_2l
-        rtc_flag
 
         ; RTC registers
         rtc_min
@@ -516,6 +515,9 @@ EStopActive1            db      "Deactivate stop", 0
 EStopActive2            db      "when ready.", 0
 EStopResume1            db      "Resuming...", 0
 
+DateMsg                 db      "Date: ", 0
+TimeMsg                 db      "Time: ", 0
+
 
 ; ============================================================================
 ; Main program
@@ -570,6 +572,10 @@ Configure
 ; Welcome - Initially shown on start up until user presses a button.
 WelcomeScreen
         call        ClearLCD
+        call        RTCDisplayTopLeft
+        call        Delay1s
+        call        Delay1s
+        call        ClearLCD
         ;display first and secondlines of welcome message
         lcddisplay  WelcomeMsg, first_line
         store_disp1 WelcomeMsg
@@ -590,18 +596,14 @@ Menu
         store_disp1 MenuMsg1
         lcddisplay  MenuMsg2, second_line
         store_disp2 MenuMsg2
-        bsf         rtc_flag, 0
 MenuLoop
         ; Wait until user has pressed 1 to begin or 2 for logs.
-        call        RTCDisplayTopRight
         keygoto     key_1, BeginOperation
         keygoto     key_2, LogMenu
         bra         MenuLoop
 ; ----------------------------------------------------------------------------
 ; Begin Operation- TODO: Manages all motors and sensors needed to test LCD.
 BeginOperation
-        ; clear flag that says we need to display a RTC clock
-        bcf         rtc_flag, 0
         ; get Start time of operation
         call        ReadFromRTC
         movff       rtc_sec, start_time_sec
@@ -792,7 +794,6 @@ EndDisplayLoop
 ; operations.
 ; ----------------------------------------------------------------------------
 LogMenu
-        bcf         rtc_flag, 0
         movlf       d'0', display_flag
         call        ClearLCD
         lcddisplay  LogMsg1, first_line
@@ -1024,8 +1025,6 @@ EndPollEStopLoop
         call        ClearLCD
         btfsc       display_flag, 0
         goto        ReDisplayLight
-        btfsc       rtc_flag, 0
-        goto        ReDisplayMenu
         goto        ReDisplayGeneral
 ReDisplayGeneral
         redisp
@@ -1033,9 +1032,6 @@ ReDisplayGeneral
 ReDisplayLight
         redisp_light display_light
         goto        EndPollEStop
-ReDisplayMenu
-        redisp
-        call        RTCDisplayTopRight
         gotoEndPollEStop
 
 EndPollEStop
@@ -1261,10 +1257,39 @@ ReadFromRTC
         i2c_stop
         return
 
-RTCDisplayTopRight
+RTCDisplayTopLeft
         call        ReadFromRTC
-        movlw       B'10001011'
+        movlw       B'10000000'
         writelcdinst
+
+        rtc_convert rtc_mon
+        movff       tens_digit, WREG
+        call        WriteLCDCharData
+        movff       ones_digit, WREG
+        call        WriteLCDCharData
+
+        movlw       0x2F
+        call        WriteLCDCharData
+
+        rtc_convert rtc_date
+        movff       tens_digit, WREG
+        movff       tens_digit, WREG
+        call        WriteLCDCharData
+        movff       ones_digit, WREG
+        call        WriteLCDCharData
+
+        movlw       0x2F
+        call        WriteLCDCharData
+
+        rtc_convert rtc_yr
+        movff       tens_digit, WREG
+        movff       tens_digit, WREG
+        call        WriteLCDCharData
+        movff       ones_digit, WREG
+        call        WriteLCDCharData
+
+        movlw       0x20
+        call        WriteLCDCharData
 
         rtc_convert rtc_hr
         movff       tens_digit, WREG
@@ -1272,7 +1297,7 @@ RTCDisplayTopRight
         movff       ones_digit, WREG
         call        WriteLCDCharData
 
-        movlw       0x3A
+        movlw       0x3A                ; ":"
         call        WriteLCDCharData
 
         rtc_convert rtc_min
