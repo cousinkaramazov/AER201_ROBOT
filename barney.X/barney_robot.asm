@@ -1394,53 +1394,56 @@ GetTimeTaken
 FirstDigitSeconds
         ; first digit of second
         movf    end_time_sec, W
-        andlw   0x0F                    ; mask upper MSBs
+        andlw   0x0F                         ; mask upper MSBs
         movwf   temp_var4
         movf    start_time_sec, W
-        andlw   0x0F                    ; mask upper MSBs of starting time
+        andlw   0x0F                         ; mask upper MSBs of starting time
         movwf   temp_var5
-        ; subtract beginning first digit from ending first digit
-        movff   temp_var5, WREG
-        subwf   temp_var4, 0    ; put result in WREG
-        bnn     FirstDigitSecondsNotNegative         ; if result not negative
-                                        ; go deal with higher bit
+        ; ending first digit (seconds) - starting first digit (seconds)
+        movf    temp_var5, W
+        subwf   temp_var4, w                 
+        bnn     FirstDigitSecondsNotNegative ; no other processing needed
+                                             ; if this is not negative
+                                       
         ; if negative, then add 10 to it
         addlw   d'10'
         andlw   0x0F                    ; mask to have lower bit only
         movwf   second_diff
-        ; and add 1 to the high digit of second of the OLD one
-        swapf   start_time_sec, 0       ; swap to lower nibble and store in W
+        ; add 1 to starting second digit (seconds), same thing as subtracting 1 
+        ; from ending second digit (seconds)
+        swapf   start_time_sec, W       ; swap to lower nibble and store in W
         andlw   0x0F                    ; mask it
         incf    WREG                    ; add one
         swapf   WREG                    ; swap back to upper nibble
-        movwf   start_time_sec         ; move it back to old data
+        movwf   start_time_sec          ; move it back to old data
         bra     SecondDigitSeconds
 
 FirstDigitSecondsNotNegative
-                andlw   0x0F
-                movwf   second_diff
+        andlw   0x0F                    ; mask MSBs
+        movwf   second_diff             ; no other processing needed
 
 SecondDigitSeconds
-        ; high digit of second
+        ; get second digit of ending time (seconds)
         swapf   end_time_sec, w
-        andlw   0x0F                    ; read lower nibble only
+        andlw   0x0F                    
         movwf   temp_var4
+        ; get second digit of starting time (seconds)
         swapf   start_time_sec, w
-        andlw   0x0F
+        andlw   0x0F            
         movwf   temp_var5
-        ; TemporaryVariable (new) - TemporaryVariable2 (old)
+        ; ending second digit(seconds) - starting second digit (seconds)
         movff   temp_var5, WREG
-        subwf   temp_var4, 0    ; put result in WREG
-        bnn     SecondDigitSecondsNotNegative         ; if result not negative
-                                        ; go deal with higher bit
-        ; if negative, then add 6 to it
+        subwf   temp_var4, w            
+        bnn     SecondDigitSecondsNotNegative   ; no other processing needed
+                                                ; if this is not negative
+        ; if negative, then add 6 to - result of carrying from minutes
         addlw   d'6'
         swapf   WREG
-        andlw   0xF0                    ; mask to only have upper bit
-        addwf   second_diff, 1      ; add to store into the second difference
-        ; and add 1 to the low digit of minute of the OLD one
+        andlw   0xF0                    ; this is second digit so mask lower bits
+        addwf   second_diff, 1          ; add to store into the second difference
+        ;and add 1 to the low digit of minute of the OLD one
         ; before adding it, need to check if it's 9. If it is, then will need
-        ; to add one to HighMinute
+        ; to add one to HighMinute 
         sublw   d'9'
         bnz     AddOneToFirstDigitMinutes
 AddOneToSecondDigitMinutes
@@ -1468,21 +1471,21 @@ FirstDigitMinutes
         movff   start_time_min, WREG
         andlw   0x0F
         movwf   temp_var5
-        ; TemporaryVariable (new) - TemporaryVariable2 (old)
+       
         movff   temp_var5, WREG
-        subwf   temp_var4, 0    ; put result in WREG
-        bnn     FirstDigitMinutesNotNegative         ; if result not negative
-                                        ; go deal with higher bit
-        ; if negative, then add 10 to it
+        subwf   temp_var4, 0    
+        bnn     FirstDigitMinutesNotNegative        
+                                       
+        
         addlw   d'10'
-        andlw   0x0F                    ; mask to have lower bit only
+        andlw   0x0F                    
         movwf   min_diff
-        ; and add 1 to the high digit of minute of the OLD one
-        swapf   start_time_min, 0       ; swap to lower nibble and store in W
-        andlw   0x0F                    ; mask it
-        incf    WREG                    ; add one
-        swapf   WREG                    ; swap back to upper nibble
-        movwf   start_time_min          ; move it back to old data
+        
+        swapf   start_time_min, 0       
+        andlw   0x0F                    
+        incf    WREG                    
+        swapf   WREG                    
+        movwf   start_time_min         
         bra     SecondDigitMinutes
 
 FirstDigitMinutesNotNegative
@@ -1492,22 +1495,22 @@ FirstDigitMinutesNotNegative
 SecondDigitMinutes
         ; high digit of minute
         swapf   end_time_min, w
-        andlw   0x0F                    ; read lower nibble only
+        andlw   0x0F                    
         movwf   temp_var4
         swapf   start_time_min, w
         andlw   0x0F
         movwf   temp_var5
-        ; TemporaryVariable (new) - TemporaryVariable2 (old)
+       
         movff   temp_var5, WREG
-        subwf   temp_var4, 0    ; put result in WREG
-        bnn     SecondDigitMinutesNotNegative     ; if result not negative
-                                        ; go deal with higher bit
-        ; if negative, then add 6 to it
+        subwf   temp_var4, 0   
+        bnn     SecondDigitMinutesNotNegative     
+                                       
+   
         addlw   d'6'
         swapf   WREG
-        andlw   0xF0                    ; mask to only have upper bit                    ; mask to only have upper bit
-        addwf   min_diff, 1      ; add to store into the second difference
-        ; and add 1 to the low digit of hour of the OLD one
+        andlw   0xF0                   
+        addwf   min_diff, 1      
+        
         bra     EndGetTimeTaken
 
 SecondDigitMinutesNotNegative
@@ -1597,10 +1600,10 @@ ClockSRs
         bsf         SR_CLOCK
         call        Delay5ms
         call        Delay5ms
-        ;call        Delay1s     ; for demonstrative purposes
+        call        Delay1s     ; for demonstrative purposes
         bcf         SR_CLOCK
         call        Delay44us
-        ;call        Delay1s     ; for demonstrative purposes
+        call        Delay1s     ; for demonstrative purposes
         return
 ; ----------------------------------------------------------------------------
 ; NoLightPresent: No light is present, return the binary output coded for
@@ -1958,8 +1961,8 @@ EndDelay1s
 ; ----------------------------------------------------------------------------
 MotorDelay
         call        Delay1s
-        ;call        Delay1s
-        ;call        Delay1s
+        call        Delay1s
+        call        Delay1s
         ;call        Delay1s
         ;call        Delay1s
         ;call        Delay1s
