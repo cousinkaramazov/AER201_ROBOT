@@ -570,11 +570,15 @@ Configure
 ; Welcome - Initially shown on start up until user presses a button.
 WelcomeScreen
         call        ClearLCD
+        call        RTCDisplayTopLeft
+        call        Delay1s
+        call        Delay1s
         ;display first and secondlines of welcome message
         lcddisplay  WelcomeMsg, first_line
         store_disp1 WelcomeMsg
         lcddisplay  WelcomeMsg2, second_line
         store_disp2 WelcomeMsg2
+
 WelcomeLoop
         call        CheckAnyButton
         beq         d'1', keypad_result, Menu   ; if key has not been pressed
@@ -593,7 +597,6 @@ Menu
         bsf         rtc_flag, 0
 MenuLoop
         ; Wait until user has pressed 1 to begin or 2 for logs.
-        call        RTCDisplayTopRight
         keygoto     key_1, BeginOperation
         keygoto     key_2, LogMenu
         bra         MenuLoop
