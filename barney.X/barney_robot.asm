@@ -61,6 +61,15 @@
 #define     log_B       d'20'
 #define     log_C       d'40'
 #define     log_D       d'60'
+
+#define     seconds     0x0
+#define     minutes     0x1
+#define     hours       0x2
+#define     day         0x3
+#define     date        0x4
+#define     month       0x5
+#define     year        0x6
+#define     rtc_con     0x7
 ; ============================================================================
 ; General Purpose Registers (using Access Bank)
 ; ============================================================================
@@ -70,6 +79,7 @@
         delay1
         delay2
         delay3
+        temp_var3
         ; Sensor registers
         test_light
         LED_count
@@ -109,6 +119,26 @@
         curr_display_2u
         curr_display_2h
         curr_display_2l
+        rtc_flag
+
+        ; RTC registers
+        rtc_min
+        rtc_sec
+        rtc_hr
+        rtc_day
+        rtc_date
+        rtc_mon
+        rtc_yr
+
+        tens_digit
+        ones_digit
+        temp_var2
+
+        ; Computing time difference registers
+        start_time_sec
+        start_time_min
+        end_time_sec
+        end_time_min
     endc
 
 
@@ -355,19 +385,74 @@ storeSR         macro   register
 ; I2C macros - code inspired by sample code provided
 ; ----------------------------------------------------------------------------
 i2c_start       macro
-            bsf     SSPCON2, SEN
-            call    I2CCheck
-            endm
+        bsf     SSPCON2, SEN
+        call    CheckI2C
+        endm
 
 i2c_stop        macro
-            bsf     SSPCON2, PEN
-            call    I2CCheck
-            endm
+        bsf     SSPCON2, PEN
+        call    CheckI2C
+        endm
 
 i2c_write       macro
-            movwf   SSPBUF
-            call    I2CCheck
-            endm
+        movwf   SSPBUF
+        call    CheckI2C
+        endm
+
+rd_i2c_buf_ack  macro   rtc_reg
+        bsf     SSPCON2, RCEN
+        call    CheckI2C
+        i2c_common_ack
+        movff   SSPBUF, rtc_reg
+        endm
+
+
+rd_i2c_buf_nack macro   rtc_reg
+        bsf     SSPCON2, RCEN
+        call    CheckI2C
+        i2c_common_nack
+        movff   SSPBUF, rtc_reg
+        endm
+
+
+
+i2c_common_ack  macro
+        bcf     SSPCON2,ACKDT
+        bsf     SSPCON2,ACKEN
+        call    CheckI2C
+        endm
+
+i2c_common_nack	macro
+        bsf      SSPCON2,ACKDT
+        bsf      SSPCON2,ACKEN
+        call     CheckI2C
+        endm
+
+; rtc_wr - writes data given to register in RTC at address
+rtc_wr   macro   address, rtc_data
+        i2c_start
+        movlw       0xD0            ; RTC address
+        i2c_write
+        movlw       address         ; set register address on I2c
+        i2c_write
+        movlw       rtc_data        ; write data to RTC register
+        i2c_write
+        i2c_stop
+        endm
+
+; rtc_convert- takes BCD coded data and outputs an ASCII ones and tens digit
+rtc_convert macro   rtc_data
+        swapf       rtc_data, W
+        andlw       B'00001111'
+        addlw       0x30
+        movwf       tens_digit
+        movf        rtc_data, W
+        andlw       B'00001111'
+        addlw       0x30
+        movwf       ones_digit
+        endm
+
+
 ; ============================================================================
 ; Vectors
 ; ============================================================================
@@ -478,7 +563,8 @@ Configure
         bcf         INTCON2, INTEDG0        ; falling edge trigger
 
         call        ConfigureLCD                ; Initializes LCD, sets parameters as needed
-
+        call        ConfigureI2C
+        call        InitializeRTC
        
 ; ----------------------------------------------------------------------------
 ; Welcome - Initially shown on start up until user presses a button.
@@ -504,35 +590,45 @@ Menu
         store_disp1 MenuMsg1
         lcddisplay  MenuMsg2, second_line
         store_disp2 MenuMsg2
+        bsf         rtc_flag, 0
 MenuLoop
         ; Wait until user has pressed 1 to begin or 2 for logs.
+        call        RTCDisplayTopRight
         keygoto     key_1, BeginOperation
         keygoto     key_2, LogMenu
         bra         MenuLoop
 ; ----------------------------------------------------------------------------
 ; Begin Operation- TODO: Manages all motors and sensors needed to test LCD.
 BeginOperation
+        ; clear flag that says we need to display a RTC clock
+        bcf         rtc_flag, 0
+        ; get Start time of operation
+        call        ReadFromRTC
+        movff       rtc_sec, start_time_sec
+        movff       rtc_min, start_time_min
+        ; Display "working..." message
         call        ClearLCD
         lcddisplay  OpMsg, first_line
         store_disp1 OpMsg
         store_disp2 BlankLine
-        ; actual operation stuff goes on here
+        ; Operate the motor, read and store the sensor input
         call        OperateMotorForwards
         call        Delay500ms
         call        ReadSensorInput
-        ;call        StoreSensorInput
         call        Delay500ms
         call        OperateMotorBackwards
         call        Delay500ms
         call        StoreLogs
-
-
-        call        ClearLCD                    ; clear the LCD
-        lcddisplay  OpComplete, first_line      ; Operation is done
+        ; Display "Operation complete."
+        call        ClearLCD                    
+        lcddisplay  OpComplete, first_line
         store_disp1 OpComplete
         store_disp2 BlankLine
-        call        Delay1s
-        ;call        Delay1s
+        ;get end time
+        call        ReadFromRTC
+        movff       rtc_sec, end_time_sec
+        movff       rtc_min, end_time_min
+        call        Delay1s                 ; allow user time to read message
         goto        DisplayOperation
 
 
@@ -696,6 +792,7 @@ EndDisplayLoop
 ; operations.
 ; ----------------------------------------------------------------------------
 LogMenu
+        bcf         rtc_flag, 0
         movlf       d'0', display_flag
         call        ClearLCD
         lcddisplay  LogMsg1, first_line
@@ -925,23 +1022,24 @@ EndPollEStopLoop
         lcddisplay  EStopResume1, first_line
         call        Delay1s
         call        ClearLCD
-        btfss       display_flag, 0
-        goto        ReDisplayGeneral
+        btfsc       display_flag, 0
         goto        ReDisplayLight
+        btfsc       rtc_flag, 0
+        goto        ReDisplayMenu
+        goto        ReDisplayGeneral
 ReDisplayGeneral
         redisp
         goto        EndPollEStop
 ReDisplayLight
         redisp_light display_light
         goto        EndPollEStop
+ReDisplayMenu
+        redisp
+        call        RTCDisplayTopRight
+        gotoEndPollEStop
 
 EndPollEStop
         return
-
-        ; check 0th bit of Port B in a loop until it returns high
-        ; display "Resuming..."
-        ; once done, reenable interrupts with bsf Intcon, GIE
-
 
 ; ============================================================================
 ; Subroutines
@@ -1088,16 +1186,111 @@ ShiftLogsLoop
 EndShiftLogs
         return
 
-;; ----------------------------------------------------------------------------
-;; I2C Subroutines
-;; ----------------------------------------------------------------------------
-;CheckI2C
-;        btfss       PIR1, SSPIF   ; set whenever complete byte transferred
-;        goto        CheckI2CLoop
-;        goto        EndCheckI2C
-;EndCheckI2C
-;        bcf         PIR1, SSPIF
-;        return
+; ----------------------------------------------------------------------------
+; I2C Subroutines
+; ----------------------------------------------------------------------------
+; CheckI2C: Loops until I2C has successfully been read/written from/to
+; INPUT: None
+; OUTPUT: None
+; ----------------------------------------------------------------------------
+CheckI2C
+        btfss       PIR1, SSPIF   ; set whenever complete byte transferred
+        goto        CheckI2C
+        goto        EndCheckI2C
+EndCheckI2C
+        bcf         PIR1, SSPIF
+        return
+
+
+; ----------------------------------------------------------------------------
+; ConfigureI2C: Configures I2C/RTC for use
+; INPUT: None
+; OUTPUT: None
+; ----------------------------------------------------------------------------
+ConfigureI2C
+        ;enable MSSPmode set to I2c master mode - SSPCON1
+        ; disable slew control rate control
+        ; store 24 in sspadd
+        movlf       b'00101000', SSPCON1     ; enable MSSP master mode, enable serial port
+        movlf       b'10000000', SSPSTAT     ; disable slew control, write mode
+        movlf       d'24', SSPADD           ; 100 kHz baud rate
+        rtc_wr      rtc_con, 0x90
+        return
+
+
+; ----------------------------------------------------------------------------
+; InitializeRTC: Sets date, time, year, etc on RTC- only to be used on initial 
+; use
+; INPUT: None
+; OUTPUT: None
+; ----------------------------------------------------------------------------
+InitializeRTC
+        rtc_wr      seconds, d'0'       ; seconds
+        rtc_wr      minutes, d'0'       ; minutes
+        rtc_wr      hours, d'9'         ; hours
+        rtc_wr      day, d'1'           ; days
+        rtc_wr      date, b'00100010'   ; date
+        rtc_wr      month, d'2'         ; month
+        rtc_wr      year, b'00010100'   ; year
+        return
+
+; ----------------------------------------------------------------------------
+; ReadFromRTC: Reads time, date, year, etc of current values on RTC
+; INPUT: None
+; OUTPUT: rtc_min, rtc_sec, rtc_hr, rtc_day, rtc_date, rtc_mon, rtc_yr
+; ----------------------------------------------------------------------------
+ReadFromRTC
+        i2c_start
+        movlw       0xD0                ; slave address: write
+        i2c_write
+        movlw       0x00                ; seconds register
+        i2c_write
+        i2c_stop
+
+        i2c_start
+        movlw       0xD1                ; slave address: read
+        i2c_write
+
+        rd_i2c_buf_ack  rtc_sec
+        rd_i2c_buf_ack  rtc_min
+        rd_i2c_buf_ack  rtc_hr
+        rd_i2c_buf_ack  rtc_day
+        rd_i2c_buf_ack  rtc_date
+        rd_i2c_buf_ack  rtc_mon
+        rd_i2c_buf_nack rtc_yr
+        i2c_stop
+        return
+
+RTCDisplayTopRight
+        call        ReadFromRTC
+        movlw       B'10001011'
+        writelcdinst
+
+        rtc_convert rtc_hr
+        movff       tens_digit, WREG
+        call        WriteLCDCharData
+        movff       ones_digit, WREG
+        call        WriteLCDCharData
+
+        movlw       0x3A
+        call        WriteLCDCharData
+
+        rtc_convert rtc_min
+        movff       tens_digit, WREG
+        call        WriteLCDCharData
+        movff       ones_digit, WREG
+        call        WriteLCDCharData
+
+        return
+
+; ----------------------------------------------------------------------------
+; ComputeTimeDifference: Computes how long an operation took by computing
+; difference between start and end times
+; INPUT: start_time_sec, start_time_min, end_time_sec, end_time_min
+; OUTPUT: total_diff
+; ----------------------------------------------------------------------------
+
+
 
 
 ; ----------------------------------------------------------------------------
@@ -1299,6 +1492,24 @@ MovMSB
         iorlw       0x0F
         andwf       PORTD, f
         return
+
+
+WriteLCDCharData
+        bsf         LCD_RS
+        movwf       temp_var3
+        call        MovMSB
+        bsf         LCD_E
+        call        Delay44us
+        bcf         LCD_E
+        swapf       temp_var3, 0
+        call        MovMSB
+        bsf         LCD_E
+        call        Delay44us
+        bcf         LCD_E
+        call        Delay44us
+        return
+
+
 ; ----------------------------------------------------------------------------
 ; ClearLCD: Clear both lines of LCD
 ; INPUT: None
