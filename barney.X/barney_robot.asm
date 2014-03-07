@@ -121,6 +121,7 @@
         e_stop_poll
         display_flag
         display_light
+        e_stop_flag
         curr_display_1u
         curr_display_1h
         curr_display_1l
@@ -179,6 +180,7 @@ beq         macro   literal, register, label
             goto    label
             endm
 ; ----------------------------------------------------------------------------
+; conv_dig:     adds 0x30 to a BCD digit for conversion to ASCII value
 conv_dig    macro   register
             movf    register, W
             addlw   0x30
@@ -503,7 +505,7 @@ rtc_wr   macro   address, rtc_data
         endm
 ; ----------------------------------------------------------------------------
 ; rtc_convert- takes BCD coded data and outputs an ASCII ones and tens digit
-; these are stored in registers tens_digit and ones_digit
+; these digits are stored in registers tens_digit and ones_digit
 rtc_convert macro   rtc_data
         swapf       rtc_data, W
         andlw       B'00001111'     ; masks all but MSBs of rtc_data
@@ -1247,6 +1249,7 @@ EndLogResultsLoop
 ; ----------------------------------------------------------------------------
 EmergencyStop
         bcf         INTCON, INT0IF      ; clear flag used for E Stop
+        bsf         e_stop_flag, 0
         call        ClearLCD
         ; Display emergency stop message
         lcddisplay  EStopFlash1, first_line
