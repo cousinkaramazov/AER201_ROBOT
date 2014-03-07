@@ -40,6 +40,13 @@
 #define     SR_L3       PORTC, 2
 #define     SR_P        PORTC, 5
 
+#define     DB0         PORTA, 0
+#define     DB1         PORTA, 1
+#define     DB2         PORTA, 2
+#define     DB3         PORTA, 3
+#define     DB4         PORTA, 4
+#define     DB5         PORTA, 5
+
 #define     key_1       d'0'
 #define     key_2       d'1'
 #define     key_3       d'2'
@@ -573,8 +580,21 @@ EStopActive1            db      "Deactivate stop", 0
 EStopActive2            db      "when ready.", 0
 EStopResume1            db      "Resuming...", 0
 
+
 DateMsg                 db      "Date: ", 0
 TimeMsg                 db      "Time: ", 0
+
+;Debug Tables
+LCDDebugMotor           db      "1: Motors", 0
+LCDDebugRegisters       db      "2: Registers", 0
+LCDDebugForwards        db      "1: Forwards", 0
+LCDDebugBackwards       db      "2: Backwards", 0
+LCDPrepareRegisters     db      "1: Prepare", 0
+LCDClockRegisters       db      "2: Clock, 3:Gen", 0
+LCDDebugGen1            db      "Press to toggle", 0
+LCDDebugGen2            db      "In toggle off", 0
+
+
 
 
 
@@ -601,7 +621,7 @@ Configure
         clrf        PORTE
         ; configure PORTA for input from shift register
         ; SR input-<3:0>
-        movlw       b'00000000'
+        movlw       b'00000001'
         movwf       TRISA
         movlw       07h
         movwf       ADCON1
@@ -610,11 +630,20 @@ Configure
         movwf       TRISB
         ; configure PORTC for motor signals, RTC, output to shift register
         ; SR output-<7:5>, RTC-<4:3>, Motor signals-<1:0>
-        movlw       b'00111111'
+        ;movlw       b'00111111'
+
+        movlw       b'10111000'
+
         movwf       TRISC
-        bsf         SR_LOAD
-        bsf         SR_CINHIBIT
+        ;bsf         SR_LOAD
+        ;bsf         SR_CINHIBIT
         call        Delay1s
+
+        ;debug
+        movlw       b'00000001'
+        movwf       TRISE
+
+
         
         call        Delay1s
         ; configure interrupts
@@ -626,7 +655,7 @@ Configure
 
         call        ConfigureLCD            ; Configures LCD, sets parameters as needed
         call        ConfigureI2C            ; Configures I2C for RTC
-        call        InitializeRTC           ; Only called when clock needs to be reconfigured
+        call        InitializeRTC           ; Only called zwhen clock needs to be reconfigured
        
 ; ----------------------------------------------------------------------------
 ; Welcome - Initially shown on start up until user presses a button.  Displays
@@ -655,15 +684,140 @@ Menu
         movlf       '0', display_flag
         call        ClearLCD                    ;Clears LCD Screen
         ; Display menu message
-        lcddisplay  MenuMsg1, first_line
+        ;lcddisplay  MenuMsg1, first_line
+        lcddisplay  LCDDebugMotor, first_line
         store_disp1 MenuMsg1
-        lcddisplay  MenuMsg2, second_line
+
+        
+        ;lcddisplay  MenuMsg2, second_line
+        lcddisplay   LCDDebugRegisters, second_line
+
         store_disp2 MenuMsg2
 MenuLoop
         ; Wait until user has pressed 1 to begin or 2 for logs.
-        keygoto     key_1, BeginOperation
-        keygoto     key_2, LogMenu
+        ;keygoto     key_1, BeginOperation
+        keygoto     key_1, DebugMotor
+        ;keygoto     key_2, LogMenu
+        keygoto     key_2, DebugRegisters
+        keygoto     key_3, DebugGeneral
         bra         MenuLoop
+
+; ----------------------------------------------------------------------------
+; Debug Motor- Debugging module
+; ----------------------------------------------------------------------------
+DebugMotor
+        call        ClearLCD
+        lcddisplay  LCDDebugForwards, first_line
+        lcddisplay  LCDDebugBackwards, second_line
+
+
+DebugMotorLoop
+        keygoto     key_1, DebugForwards
+        keygoto     key_2, DebugBackwards
+        bra         DebugMotorLoop
+
+DebugForwards
+        call        OperateMotorForwards
+        bra         DebugMotorLoop
+
+DebugBackwards
+        call        OperateMotorBackwards
+        bra         DebugMotorLoop
+; ----------------------------------------------------------------------------
+; Debug Registers- Debugging module
+; ----------------------------------------------------------------------------
+
+DebugRegisters
+        call        ClearLCD
+        lcddisplay  LCDPrepareRegisters, first_line
+        lcddisplay  LCDClockRegisters, second_line
+
+DebugRegistersLoop
+        keygoto     key_1, DebugPrepareReg
+        keygoto     key_2, DebugClockReg
+        bra         DebugRegistersLoop
+
+DebugPrepareReg
+        bsf         SR_CINHIBIT ; enable clock inhibit
+        call        Delay1s     ; for demonstration purposes
+        ;pulse load signal
+        bcf         SR_LOAD
+        call        Delay5ms
+        call        Delay5ms
+        call        Delay1s     ; for demonstrative purposes
+        call        Delay5ms
+        bsf         SR_LOAD
+        bcf         SR_CINHIBIT ; disable clock inhibit
+        bra         DebugRegistersLoop
+
+DebugClockReg
+        call        ClockSRs
+        bra         DebugRegistersLoop
+
+; ----------------------------------------------------------------------------
+; Debug General- Debugging module
+; ----------------------------------------------------------------------------
+DebugGeneral
+        call        ClearLCD
+        lcddisplay  LCDDebugGen1, first_line
+DebugGeneralLoop
+        keygoto     key_1, DebugToggle1
+        keygoto     key_2, DebugToggle2
+        keygoto     key_3, DebugToggle3
+        keygoto     key_4, DebugToggle4
+        keygoto     key_5, DebugToggle5
+        bra         DebugGeneralLoop
+
+DebugToggle1
+        btfsc       PORTD, 0
+        goto        ToggleOff1
+        bsf         PORTD, 0
+        bra         DebugGeneral
+ToggleOff1
+        bcf         PORTD, 0
+        bra         DebugGeneral
+; ----------------------------------------------------------------------------
+DebugToggle2
+        btfsc       PORTD, 1
+        goto        ToggleOff2
+        bsf         PORTD, 1
+        bra         DebugGeneral
+ToggleOff2
+        bcf         PORTD, 1
+        bra         DebugGeneral
+; ----------------------------------------------------------------------------
+DebugToggle3
+        btfsc       PORTC, 0
+        goto        ToggleOff3
+        bsf         PORTC, 0
+        bra         DebugGeneral
+ToggleOff3
+        bcf         PORTC, 0
+        bra         DebugGeneral
+; ----------------------------------------------------------------------------
+DebugToggle4
+        btfsc       PORTC, 1
+        goto        ToggleOff4
+        bsf         PORTC, 1
+        bra         DebugGeneral
+ToggleOff4
+        bcf         PORTC, 1
+        bra         DebugGeneral
+; ----------------------------------------------------------------------------
+DebugToggle5
+        btfsc       PORTC, 2
+        goto        ToggleOff5
+        bsf         PORTC, 2
+        bra         DebugGeneral
+ToggleOff5
+        bcf         PORTC, 2
+        bra         DebugGeneral
+
+
+
+
+
+
 ; ----------------------------------------------------------------------------
 ; Begin Operation- Manages all motors and sensors needed to test LCD.
 ; Stores needed light data in logs, calculates time needed for operation.
@@ -1323,10 +1477,10 @@ ConfigureI2C
 ; ----------------------------------------------------------------------------
 InitializeRTC
         rtc_wr      seconds, d'0'       ; seconds
-        rtc_wr      minutes, d'0'       ; minutes
-        rtc_wr      hours, d'9'         ; hours
+        rtc_wr      minutes, d'00100000'       ; minutes
+        rtc_wr      hours, d'3'         ; hours
         rtc_wr      day, d'1'           ; days
-        rtc_wr      date, b'00100010'   ; date
+        rtc_wr      date, b'00100100'   ; date
         rtc_wr      month, d'2'         ; month
         rtc_wr      year, b'00010100'   ; year
         return
@@ -1961,15 +2115,6 @@ EndDelay1s
 ; ----------------------------------------------------------------------------
 MotorDelay
         call        Delay1s
-        call        Delay1s
-        call        Delay1s
-        ;call        Delay1s
-        ;call        Delay1s
-        ;call        Delay1s
-        ;call        Delay1s
-        ;call        Delay1s
-        ;call        Delay1s
-        ;call        Delay1s
 EndDelayMotor
         return
 
